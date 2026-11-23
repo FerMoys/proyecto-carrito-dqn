@@ -25,6 +25,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--target-laps", type=float, default=1.0)
     parser.add_argument("--max-steps", type=int, default=1800)
+    parser.add_argument("--hidden-size", type=int, default=TrainConfig.hidden_size)
+    parser.add_argument("--gamma", type=float, default=TrainConfig.gamma)
+    parser.add_argument(
+        "--epsilon-decay", type=int, default=TrainConfig.epsilon_decay_steps
+    )
+    parser.add_argument("--lr", type=float, default=TrainConfig.learning_rate)
     parser.add_argument("--output", type=Path, default=Path("results"))
     return parser.parse_args()
 
@@ -90,7 +96,15 @@ def evaluate_without_render(
 def main() -> None:
     args = parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    train_config = replace(TrainConfig(), episodes=args.episodes, seed=args.seed)
+    train_config = replace(
+        TrainConfig(),
+        episodes=args.episodes,
+        seed=args.seed,
+        hidden_size=args.hidden_size,
+        gamma=args.gamma,
+        epsilon_decay_steps=args.epsilon_decay,
+        learning_rate=args.lr,
+    )
     track_config = replace(
         TrackConfig(), target_laps=args.target_laps, max_steps=args.max_steps
     )
@@ -194,6 +208,9 @@ def main() -> None:
         writer.close()
 
     agent.save(str(args.output / "final_model.pt"))
+    best_model_path = args.output / "best_model.pt"
+    if not best_model_path.exists():
+        agent.save(str(best_model_path))
     logs = pd.DataFrame(rows)
     logs.to_csv(args.output / "training_log.csv", index=False)
     save_curves(logs, args.output / "training_curves.png")
