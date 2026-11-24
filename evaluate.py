@@ -1,5 +1,4 @@
 """Carga un modelo entrenado y observa su conducción sin exploración aleatoria."""
-
 from __future__ import annotations
 
 import argparse
@@ -11,6 +10,7 @@ import torch
 from car_env import CarTrackEnv
 from config import TrainConfig
 from dqn_agent import DQNAgent
+import csv
 
 
 def parse_args() -> argparse.Namespace:
@@ -18,6 +18,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", type=Path, default=Path("results/best_model.pt"))
     parser.add_argument("--episodes", type=int, default=5)
     parser.add_argument("--no-render", action="store_true")
+    parser.add_argument(
+    "--csv-output",
+    type=Path,
+    default=None,
+    help="Archivo CSV donde guardar los resultados"
+    )
+    parser.add_argument(
+        "--configuracion",
+        type=str,
+        default="Base64"
+    )
+    parser.add_argument(
+        "--semilla-entrenamiento",
+        type=int,
+        default=42
+    )
+    parser.add_argument(
+        "--random-start",
+        action="store_true",
+        help="Evaluar con posiciones iniciales aleatorias"
+    )
     return parser.parse_args()
 
 
@@ -49,7 +70,8 @@ def main() -> None:
     results = []
     for episode in range(args.episodes):
         observation, _ = env.reset(
-            seed=1000 + episode, options={"random_start": False}
+            seed=1000 + episode, 
+            options={"random_start": args.random_start}
         )
         total_reward = 0.0
         done = False
@@ -72,6 +94,7 @@ def main() -> None:
         print(f"Episodio {episode + 1}: {results[-1]}")
 
     env.close()
+
     if results:
         print(
             "Resumen:",
@@ -81,6 +104,49 @@ def main() -> None:
                 "collision_rate": float(np.mean([row["collision"] for row in results])),
             },
         )
+
+        if args.csv_output:
+            args.csv_output.parent.mkdir(parents=True, exist_ok=True)
+
+            file_exists = (
+                args.csv_output.exists()
+                and args.csv_output.stat().st_size > 0
+            )
+
+            with args.csv_output.open(
+                "a", newline="", encoding="utf-8"
+            ) as file:
+                fieldnames = [
+                    "configuracion",
+                    "semilla",
+                    "condicion",
+                    "episodio",
+                    "reward",
+                    "success",
+                    "collision",
+                    "steps",
+                ]
+
+                writer = csv.DictWriter(file, fieldnames=fieldnames)
+
+                if not file_exists:
+                    writer.writeheader()
+
+                for index, result in enumerate(results, start=1):
+                    writer.writerow({
+                        "configuracion": args.configuracion,
+                        "semilla": args.semilla_entrenamiento,
+                        "condicion": (
+                            "aleatoria" if args.random_start else "fija"
+                        ),
+                        "episodio": index,
+                        "reward": result["reward"],
+                        "success": result["success"],
+                        "collision": result["collision"],
+                        "steps": result["steps"],
+                    })
+
+            print(f"Resultados guardados en: {args.csv_output}")
 
 
 if __name__ == "__main__":
