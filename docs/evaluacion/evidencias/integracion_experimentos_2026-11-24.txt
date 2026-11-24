@@ -1,0 +1,50 @@
+Integración del evaluador con feature/experimentos
+Fecha: 2026-11-24
+Rama: feature/evaluacion-reproducible
+Base conservada: e8a2d92
+Comparación remota: feature/experimentos, 1be444f; feature/agente-dqn, abe9d49.
+Este archivo resume resultados observados; no es una transcripción completa de todas las sesiones.
+
+PRUEBAS UNITARIAS
+Comando portable: python -X utf8 -B -m unittest discover -s tests -p test_evaluate.py -v
+Python 3.11.9: 48 pruebas aprobadas en 7.520 s.
+Fallos: 0; errores: 0; omisiones: 0.
+Python 3.12.14: 48 pruebas aprobadas en 6.069 s.
+Las 35 pruebas originales y las 13 nuevas usan mocks de agente/carga.
+Una prueba usa CarSimulator real y agente simulado. No acreditan carga de Base32.
+
+PRUEBA REAL BREVE
+Checkpoint existente de 64 neuronas, sin mocks de agente ni entorno.
+Dos episodios aleatorios con semillas de evaluación 42 y 43.
+Semilla de entrenamiento declarada: 42; configuración: Base64.
+CSV detallado: diez columnas; dos filas idénticas a las dos primeras de la referencia histórica.
+CSV experimental: ocho columnas; dos filas completas; mismas recompensas, pasos, éxitos y colisiones.
+Recompensas observadas: 161.73355527000086; 161.78168365349316.
+Pasos observados: 326; 326.
+Validación y agrupación: se ejecutaron las celdas 3 y 5 (índices desde cero) del notebook remoto con pandas real.
+Solo se sustituyó display para omitir la presentación; no se sustituyeron datos ni cálculos.
+El proceso terminó con código 0.
+Checkpoint con SHA-256 sin cambios. Los dos CSV nuevos de esta prueba fueron temporales.
+No se ejecutó Base32 ni la validación conjunta de ambas arquitecturas.
+
+CONTRASTE DE CSV PUBLICADOS
+Origen: feature/experimentos, commit 1be444f
+120 DQN + 120 baselines = 240 registros; todas las claves presentes y sin duplicados.
+Diferencias de representacion numerica entre fuentes e integrado: 33 maximo absoluto: 2.842170943040401e-14
+('Aleatorio', 'Aleatorio', 'aleatoria') exito=0.0 colision=73.33333333333333 reward=4.239803604341059 +/- 2.193244757252196 pasos= +/-
+('Aleatorio', 'Aleatorio', 'fija') exito=0.0 colision=70.0 reward=5.464070297298385 +/- 3.328984910847116 pasos= +/-
+('DQN', 'Base32', 'aleatoria') exito=100.0 colision=0.0 reward=160.12807738993754 +/- 0.6658561858500778 pasos=299.3333333333333 +/- 5.484827557301439
+('DQN', 'Base32', 'fija') exito=100.0 colision=0.0 reward=160.17174267475085 +/- 0.7923976637876441 pasos=299.3333333333333 +/- 5.85946527708231
+('DQN', 'Base64', 'aleatoria') exito=100.0 colision=0.0 reward=160.25805834073594 +/- 0.667047880485524 pasos=301.8333333333333 +/- 7.379927732256811
+('DQN', 'Base64', 'fija') exito=100.0 colision=0.0 reward=160.18016743461894 +/- 0.49762680475616455 pasos=301.3333333333333 +/- 7.023769168568499
+('Heuristico', 'Heuristico', 'aleatoria') exito=100.0 colision=0.0 reward=164.58771967656995 +/- 0.007063488260247886 pasos=546.7666666666667 +/- 0.05773502691891007
+('Heuristico', 'Heuristico', 'fija') exito=100.0 colision=0.0 reward=164.62924921724726 +/- 0.0 pasos=547.0 +/- 0.0
+24 grupos de 10 episodios; 3 semillas por configuracion/condicion; 8 resumenes generales recalculados correctamente.
+Las tablas DQN del informe coinciden al redondeo publicado; baselines coinciden con los valores del informe.
+Sin repetir experimentos, ejecutar baselines ni modificar CSV historicos.
+
+ALCANCE
+Los requisitos de la guía y las tablas del informe se revisaron en lectura.
+No se repitieron los 240 episodios, no se entrenaron modelos y no se ejecutaron baselines.
+No se modificaron notebooks, requirements.txt, agente, simulador ni CSV históricos.
+No se hicieron commits, merges, rebase, push ni Pull Requests.

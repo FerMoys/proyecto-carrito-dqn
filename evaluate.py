@@ -7,11 +7,15 @@ import csv
 from contextlib import ExitStack
 from pathlib import Path
 from statistics import fmean, pstdev
-from typing import Callable, Sequence
+from typing import Callable, Sequence, TextIO
 
 CSV_COLUMNS = (
     "model", "episode", "seed", "random_start", "reward", "steps",
     "success", "collision", "terminated", "truncated",
+)
+EXPERIMENTAL_CSV_COLUMNS = (
+    "configuracion", "semilla", "condicion", "episodio",
+    "reward", "success", "collision", "steps",
 )
 
 
@@ -29,6 +33,13 @@ def nonnegative_int(value: str) -> int:
     return number
 
 
+def nonempty_text(value: str) -> str:
+    text = value.strip()
+    if not text:
+        raise argparse.ArgumentTypeError("debe ser una etiqueta no vacía")
+    return text
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluación reproducible del carrito DQN")
     parser.add_argument("--model", type=Path, default=Path("results/best_model.pt"))
@@ -40,7 +51,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                         help="habilitar variaciones iniciales reproducibles")
     parser.add_argument("--output", type=Path,
                         help="CSV nuevo; no se sobrescriben archivos existentes")
-    return parser.parse_args(argv)
+    parser.add_argument("--csv-output", type=Path,
+                        help="CSV experimental nuevo de ocho columnas")
+    parser.add_argument("--configuracion", type=nonempty_text, default="Base64",
+                        help="etiqueta del experimento; no cambia la arquitectura")
+    parser.add_argument("--semilla-entrenamiento", type=nonnegative_int, default=42,
+                        help="semilla con la que se entrenó el modelo; distinta de --seed")
+    args = parser.parse_args(argv)
+    if (args.output is not None and args.csv_output is not None
+            and args.output.resolve() == args.csv_output.resolve()):
+        parser.error("--output y --csv-output deben usar rutas diferentes")
+    return args
 
 
 def evaluate_episodes(
@@ -119,6 +140,42 @@ def calculate_metrics(results: Sequence[dict]) -> dict:
     }
 
 
+def experimental_record(
+    row: dict, *, configuracion: str, semilla_entrenamiento: int,
+) -> dict | None:
+    """Proyecta un episodio completo al contrato del notebook experimental.
+
+    El formato de ocho columnas no puede identificar una interrupción. Omitir
+    esas filas evita tratarlas como episodios completos en los agregados.
+    """
+    if not (row["terminated"] or row["truncated"]):
+        return None
+    return {
+        "configuracion": configuracion,
+        "semilla": semilla_entrenamiento,
+        "condicion": "aleatoria" if row["random_start"] else "fija",
+        "episodio": row["episode"],
+        "reward": row["reward"],
+        "success": row["success"],
+        "collision": row["collision"],
+        "steps": row["steps"],
+    }
+
+
+def open_csv_output(
+    stack: ExitStack, path: Path | None, columns: Sequence[str],
+) -> tuple[csv.DictWriter, TextIO] | None:
+    if path is None:
+        return None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # La creación exclusiva protege también frente a procesos concurrentes.
+    output_file = stack.enter_context(path.open("x", encoding="utf-8", newline=""))
+    writer = csv.DictWriter(output_file, fieldnames=columns)
+    writer.writeheader()
+    output_file.flush()
+    return writer, output_file
+
+
 def print_summary(metrics: dict) -> None:
     print("Resumen (métricas sobre episodios completos):")
     for key, label, fmt in (
@@ -140,8 +197,9 @@ def main() -> None:
         raise FileNotFoundError(
             f"No se encontró {args.model}. Ejecuta primero: python train.py"
         )
-    if args.output is not None and (args.output.exists() or args.output.is_symlink()):
-        raise FileExistsError(f"El CSV ya existe: {args.output}. Elige otra ruta.")
+    for output in (args.output, args.csv_output):
+        if output is not None and (output.exists() or output.is_symlink()):
+            raise FileExistsError(f"El CSV ya existe: {output}. Elige otra ruta.")
 
     # Permite validar argumentos y probar el módulo sin instalar el simulador.
     import torch
@@ -173,33 +231,43 @@ def main() -> None:
         agent.policy_net.eval()
 
         with ExitStack() as stack:
-            writer = output_file = None
-            if args.output is not None:
-                args.output.parent.mkdir(parents=True, exist_ok=True)
-                # El modo x protege incluso si otro proceso acaba de crear la ruta.
-                output_file = stack.enter_context(
-                    args.output.open("x", encoding="utf-8", newline="")
-                )
-                writer = csv.DictWriter(output_file, fieldnames=CSV_COLUMNS)
-                writer.writeheader()
-                output_file.flush()
+            detailed_output = open_csv_output(stack, args.output, CSV_COLUMNS)
+            experimental_output = open_csv_output(
+                stack, args.csv_output, EXPERIMENTAL_CSV_COLUMNS,
+            )
 
             def record_episode(row: dict) -> None:
-                if writer is not None:
+                if detailed_output is not None:
+                    writer, output_file = detailed_output
                     writer.writerow(row)
                     output_file.flush()
+                if experimental_output is not None:
+                    experimental = experimental_record(
+                        row, configuracion=args.configuracion,
+                        semilla_entrenamiento=args.semilla_entrenamiento,
+                    )
+                    if experimental is not None:
+                        writer, output_file = experimental_output
+                        writer.writerow(experimental)
+                        output_file.flush()
                 print(f"Episodio {row['episode']}: {row}")
 
             results = evaluate_episodes(
                 env, agent, args.model, episodes=args.episodes, seed=args.seed,
                 random_start=args.random_start, on_episode=record_episode,
             )
-        print_summary(calculate_metrics(results))
+        metrics = calculate_metrics(results)
+        print_summary(metrics)
         not_started = args.episodes - len(results)
         if not_started:
             print(f"Episodios no iniciados: {not_started}")
         if args.output is not None:
             print(f"CSV guardado en: {args.output}")
+        if args.csv_output is not None:
+            print(f"CSV experimental guardado en: {args.csv_output}")
+            interrupted = metrics["episodes_interrupted"]
+            if interrupted:
+                print(f"Episodios parciales omitidos del CSV experimental: {interrupted}")
     finally:
         env.close()
 

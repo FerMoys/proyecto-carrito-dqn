@@ -82,6 +82,9 @@ dispositivo conserva el orden CUDA, MPS y CPU, según disponibilidad.
 | `--seed` | `1000` | Semilla del primer episodio; entero no negativo. |
 | `--random-start` | Desactivado | Activa las pequeñas variaciones de posición y orientación que ya ofrece el simulador. |
 | `--output` | Sin exportación | Ruta de un CSV nuevo; crea los directorios necesarios. |
+| `--csv-output` | Sin exportación | CSV experimental nuevo de ocho columnas, compatible con el análisis del integrante 3. |
+| `--configuracion` | `Base64` | Etiqueta experimental, por ejemplo `Base32`; no cambia la arquitectura ni el modelo. |
+| `--semilla-entrenamiento` | `42` | Semilla declarada del entrenamiento del checkpoint; entero no negativo, independiente de `--seed`. |
 
 ### Inicio fijo e inicio aleatorio
 
@@ -132,6 +135,51 @@ Los CSV existentes se rechazan: utiliza un nombre nuevo para cada ejecución.
 La creación exclusiva protege también frente a otra ejecución que cree la misma
 ruta simultáneamente. No se ofrece una opción para sobrescribir resultados.
 
+### CSV experimental y compatibilidad con el integrante 3
+
+`--output` conserva exactamente las diez columnas del formato detallado.
+`--csv-output` produce este segundo formato, con las ocho columnas que valida
+`notebooks/analisis_experimental.ipynb` de la rama `feature/experimentos`:
+
+```text
+configuracion,semilla,condicion,episodio,reward,success,collision,steps
+```
+
+Ambas salidas pueden solicitarse juntas y proceden de una sola evaluación:
+
+```powershell
+python evaluate.py --model results/best_model.pt --episodes 10 --seed 1000 --random-start --no-render --configuracion Base64 --semilla-entrenamiento 42 --output results/detalle_Base64_s42_aleatoria_01.csv --csv-output results/experimental_Base64_s42_aleatoria_01.csv
+```
+
+En ese ejemplo, `semilla` en el CSV experimental vale **42** en todas las filas
+porque identifica el entrenamiento; `seed` en el detallado recorre **1000–1009**
+porque controla cada reinicio de evaluación. `condicion` vale `fija` o `aleatoria`,
+según `--random-start`. La etiqueta y la semilla de entrenamiento son metadatos
+declarados por quien ejecuta: deben corresponder al checkpoint. No se infieren
+del nombre del archivo ni se usan para modificar la red o sus pesos.
+
+El CSV experimental contiene **solo episodios completos**, incluidas las
+truncaciones por límite de pasos. No puede identificar interrupciones con sus
+ocho columnas; por ello las filas parciales quedan únicamente en el detallado
+y se informa cuántas se omitieron del experimental. Las métricas de terminal
+mantienen su cálculo sobre episodios completos, independientemente de las salidas.
+
+Ambas rutas deben ser diferentes y nuevas. A diferencia del evaluador de la rama
+experimental, esta integración **no añade filas a CSV existentes**. Usa un archivo
+nuevo por modelo, semilla y condición, y coordina una consolidación en otro archivo
+nuevo, conservando los originales y evitando duplicar episodios. El CSV de ocho
+columnas no registra las semillas de evaluación: acompáñalo del detallado o de
+la bitácora de ejecución para reproducir los reinicios.
+
+La columna `steps` conserva los pasos de cada episodio completo. El notebook
+promedia esos pasos para todos los episodios; la terminal muestra el promedio
+solo entre éxitos. Si aparecen fracasos, esas dos medias no representan lo mismo.
+
+El notebook experimental y los CSV publicados todavía pertenecen a la rama del
+integrante 3. Los ajustes de rutas y la verificación de sus 240 registros se
+documentan en [docs/evaluacion/integracion_experimentos.md](docs/evaluacion/integracion_experimentos.md).
+No se modificaron notebooks ni se incorporaron otras ramas automáticamente.
+
 ### Métricas
 
 El resumen de terminal calcula exclusivamente sobre episodios completos:
@@ -175,6 +223,21 @@ La carga actual en esta base utiliza redes de **64 neuronas por capa oculta**.
 La validación de arquitecturas de 32 o 128 queda pendiente de que el equipo integre
 y apruebe `feature/agente-dqn`. Este módulo utiliza `DQNAgent.load()` sin copiar
 sus cambios ni adaptar arquitecturas por su cuenta.
+
+Después de integrar los cambios aprobados de `DQNAgent.load()` y disponer de los
+checkpoints correspondientes, se podrán validar ambas arquitecturas con la misma
+semilla de evaluación y archivos de salida nuevos:
+
+```powershell
+python evaluate.py --model results/Base32_seed42/best_model.pt --episodes 10 --seed 1000 --random-start --no-render --configuracion Base32 --semilla-entrenamiento 42 --output results/detalle_Base32_s42_validacion_01.csv --csv-output results/experimental_Base32_s42_validacion_01.csv
+python evaluate.py --model results/Base64_seed42/best_model.pt --episodes 10 --seed 1000 --random-start --no-render --configuracion Base64 --semilla-entrenamiento 42 --output results/detalle_Base64_s42_validacion_01.csv --csv-output results/experimental_Base64_s42_validacion_01.csv
+```
+
+Las rutas de entrada son ejemplos: deben apuntar a modelos existentes de la
+arquitectura y semilla indicadas. Omitir `--random-start` permite comprobar el
+inicio fijo; cambiar los nombres de salida para esa modalidad. Estos comandos
+son validaciones posteriores a la integración aprobada, no entrenamientos ni
+pruebas ya realizadas con Base32.
 
 ### Pruebas del módulo
 

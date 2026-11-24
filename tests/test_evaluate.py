@@ -95,6 +95,41 @@ class ArgumentTests(unittest.TestCase):
     def test_zero_seed_is_valid(self):
         self.assertEqual(evaluate.parse_args(["--seed", "0"]).seed, 0)
 
+    def test_experimental_defaults_and_arguments(self):
+        defaults = evaluate.parse_args([])
+        self.assertIsNone(defaults.csv_output)
+        self.assertEqual(defaults.configuracion, "Base64")
+        self.assertEqual(defaults.semilla_entrenamiento, 42)
+        args = evaluate.parse_args([
+            "--csv-output", "csv_results/nuevo.csv", "--configuracion", "Base32",
+            "--semilla-entrenamiento", "7", "--seed", "900", "--random-start",
+        ])
+        self.assertEqual(args.csv_output, Path("csv_results/nuevo.csv"))
+        self.assertEqual(args.configuracion, "Base32")
+        self.assertEqual(args.semilla_entrenamiento, 7)
+        self.assertEqual(args.seed, 900)
+        self.assertIsNone(args.output)
+
+    def test_invalid_experimental_metadata(self):
+        for arguments in (
+            ["--semilla-entrenamiento", "-1"],
+            ["--semilla-entrenamiento", "texto"],
+            ["--configuracion", "   "],
+        ):
+            with self.subTest(arguments=arguments), redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as error:
+                    evaluate.parse_args(arguments)
+                self.assertEqual(error.exception.code, 2)
+
+    def test_output_formats_must_use_distinct_paths(self):
+        for other in ("resultados.csv", "subcarpeta/../resultados.csv"):
+            with self.subTest(other=other), redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as error:
+                    evaluate.parse_args([
+                        "--output", "resultados.csv", "--csv-output", other,
+                    ])
+                self.assertEqual(error.exception.code, 2)
+
 
 class EvaluationTests(unittest.TestCase):
     def test_fixed_start_seeds_steps_and_no_exploration(self):
@@ -445,6 +480,173 @@ class MainTests(unittest.TestCase):
         with patch.object(Path, "open", side_effect=FileExistsError("creado por otro proceso")):
             with self.assertRaises(FileExistsError):
                 self.run_main("--output", str(destination))
+        self.env.close.assert_called_once_with()
+        self.agent.select_action.assert_not_called()
+
+    def test_experimental_csv_exact_contract_and_distinct_seeds(self):
+        destination = self.directory / "experimentos" / "nuevo.csv"
+        output, _ = self.run_main(
+            "--episodes", "3", "--seed", "900", "--random-start", "--no-render",
+            "--csv-output", str(destination), "--configuracion", "Base64",
+            "--semilla-entrenamiento", "7",
+        )
+        with destination.open(encoding="utf-8", newline="") as source:
+            reader = csv.DictReader(source)
+            rows = list(reader)
+        self.assertEqual(reader.fieldnames, [
+            "configuracion", "semilla", "condicion", "episodio",
+            "reward", "success", "collision", "steps",
+        ])
+        self.assertEqual(len(rows), 3)
+        self.assertEqual([r["episodio"] for r in rows], ["1", "2", "3"])
+        self.assertTrue(all(r["semilla"] == "7" for r in rows))
+        self.assertTrue(all(r["configuracion"] == "Base64" for r in rows))
+        self.assertTrue(all(r["condicion"] == "aleatoria" for r in rows))
+        self.assertTrue(all(r["reward"] == "2.5" and r["steps"] == "1" for r in rows))
+        self.assertEqual([c.kwargs["seed"] for c in self.env.reset.call_args_list],
+                         [900, 900, 901, 902])
+        self.assertTrue(all(c.kwargs == {"training": False}
+                            for c in self.agent.select_action.call_args_list))
+        self.assertIn("Episodios completados: 3", output)
+        self.env.close.assert_called_once_with()
+
+    def test_dual_exports_preserve_rows_and_aggregate_metrics(self):
+        detailed = self.directory / "detalle.csv"
+        experimental = self.directory / "experimental.csv"
+        self.env.step.side_effect = [
+            ([0], 10.0, True, False, {"success": 1}),
+            ([0], -2.0, True, False, {"collision": 1}),
+            ([0], 4.0, False, True, {}),
+        ]
+        output, _ = self.run_main(
+            "--episodes", "3", "--seed", "1000", "--no-render",
+            "--output", str(detailed), "--csv-output", str(experimental),
+            "--configuracion", "Base64", "--semilla-entrenamiento", "42",
+        )
+        with detailed.open(encoding="utf-8", newline="") as source:
+            detail_reader = csv.DictReader(source)
+            detail_rows = list(detail_reader)
+        with experimental.open(encoding="utf-8", newline="") as source:
+            experiment_rows = list(csv.DictReader(source))
+        self.assertEqual(detail_reader.fieldnames, list(evaluate.CSV_COLUMNS))
+        self.assertEqual(len(detail_rows), 3)
+        self.assertEqual(len(experiment_rows), 3)
+        for detail, experiment in zip(detail_rows, experiment_rows):
+            for key in ("reward", "success", "collision", "steps"):
+                self.assertEqual(detail[key], experiment[key])
+            self.assertEqual(detail["episode"], experiment["episodio"])
+            self.assertEqual(experiment["semilla"], "42")
+            self.assertEqual(experiment["condicion"], "fija")
+        self.assertEqual([r["seed"] for r in detail_rows], ["1000", "1001", "1002"])
+        self.assertEqual(sum(float(r["reward"]) for r in experiment_rows) / 3, 4.0)
+        self.assertEqual(sum(int(r["success"]) for r in experiment_rows), 1)
+        self.assertEqual(sum(int(r["collision"]) for r in experiment_rows), 1)
+        self.assertIn("Retorno promedio: 4.000000", output)
+        self.assertIn("Tasa de éxito: 33.33%", output)
+        self.assertIn("Tasa de colisión: 33.33%", output)
+        self.assertIn("Episodios completados: 3", output)
+        self.assertEqual(self.agent.select_action.call_count, 3)
+        self.env.close.assert_called_once_with()
+
+    def test_partial_episode_is_detailed_but_not_experimental(self):
+        detailed = self.directory / "detalle.csv"
+        experimental = self.directory / "experimental.csv"
+        self.env.step.side_effect = [
+            ([0], 2.0, True, False, {"success": 1}),
+            ([0], 300.0, False, False, {}),
+            KeyboardInterrupt(),
+        ]
+        output, _ = self.run_main(
+            "--episodes", "10", "--output", str(detailed),
+            "--csv-output", str(experimental),
+        )
+        with detailed.open(encoding="utf-8", newline="") as source:
+            detail_rows = list(csv.DictReader(source))
+        with experimental.open(encoding="utf-8", newline="") as source:
+            experiment_rows = list(csv.DictReader(source))
+        self.assertEqual(len(detail_rows), 2)
+        self.assertEqual(len(experiment_rows), 1)
+        self.assertEqual(detail_rows[1]["reward"], "300.0")
+        self.assertEqual(experiment_rows[0]["reward"], "2.0")
+        self.assertIn("Retorno promedio: 2.000000", output)
+        self.assertIn("Episodios interrumpidos: 1", output)
+        self.assertIn("Episodios parciales omitidos del CSV experimental: 1", output)
+
+    def test_partial_only_produces_experimental_header(self):
+        destination = self.directory / "experimental.csv"
+        self.env.step.side_effect = KeyboardInterrupt()
+        output, _ = self.run_main("--episodes", "10", "--csv-output", str(destination))
+        with destination.open(encoding="utf-8", newline="") as source:
+            reader = csv.DictReader(source)
+            self.assertEqual(list(reader), [])
+            self.assertEqual(reader.fieldnames, list(evaluate.EXPERIMENTAL_CSV_COLUMNS))
+        self.assertIn("Episodios completados: 0", output)
+        self.assertIn("Episodios parciales omitidos del CSV experimental: 1", output)
+        self.env.close.assert_called_once_with()
+
+    def test_existing_experimental_csv_is_not_appended_or_overwritten(self):
+        experimental = self.directory / "historico.csv"
+        historical_bytes = b"configuracion,semilla\r\nBase64,42\r\n"
+        experimental.write_bytes(historical_bytes)
+        detailed = self.directory / "detalle_nuevo.csv"
+        with self.assertRaises(FileExistsError):
+            self.run_main("--output", str(detailed), "--csv-output", str(experimental))
+        self.assertEqual(experimental.read_bytes(), historical_bytes)
+        self.assertFalse(detailed.exists())
+        self.agent.load.assert_not_called()
+
+    def test_existing_detail_prevents_new_experimental_file(self):
+        detailed = self.directory / "historico.csv"
+        detailed.write_bytes(b"evidencia existente\r\n")
+        experimental = self.directory / "experimental_nuevo.csv"
+        with self.assertRaises(FileExistsError):
+            self.run_main("--output", str(detailed), "--csv-output", str(experimental))
+        self.assertEqual(detailed.read_bytes(), b"evidencia existente\r\n")
+        self.assertFalse(experimental.exists())
+        self.agent.load.assert_not_called()
+
+    def test_experimental_output_cannot_overwrite_checkpoint(self):
+        with self.assertRaises(FileExistsError):
+            self.run_main("--csv-output", str(self.model))
+        self.assertEqual(self.model.read_bytes(), b"")
+        self.agent.load.assert_not_called()
+
+    def test_missing_checkpoint_creates_neither_output(self):
+        self.model = self.directory / "ausente.pt"
+        detailed = self.directory / "detalle" / "nuevo.csv"
+        experimental = self.directory / "experimento" / "nuevo.csv"
+        with self.assertRaises(FileNotFoundError):
+            self.run_main("--output", str(detailed), "--csv-output", str(experimental))
+        self.assertFalse(detailed.parent.exists())
+        self.assertFalse(experimental.parent.exists())
+
+    def test_load_failure_creates_neither_output_and_closes(self):
+        self.agent.load.side_effect = RuntimeError("carga simulada fallida")
+        detailed = self.directory / "detalle.csv"
+        experimental = self.directory / "experimental.csv"
+        with self.assertRaisesRegex(RuntimeError, "carga simulada fallida"):
+            self.run_main("--output", str(detailed), "--csv-output", str(experimental))
+        self.assertFalse(detailed.exists())
+        self.assertFalse(experimental.exists())
+        self.env.close.assert_called_once_with()
+
+    def test_experimental_open_race_closes_both_file_and_environment(self):
+        detailed = self.directory / "detalle.csv"
+        experimental = self.directory / "experimental.csv"
+        original_open = Path.open
+        opened = []
+
+        def racing_open(path, *args, **kwargs):
+            if path == experimental:
+                raise FileExistsError("ruta ocupada por otro proceso")
+            handle = original_open(path, *args, **kwargs)
+            opened.append(handle)
+            return handle
+
+        with patch.object(Path, "open", racing_open), self.assertRaises(FileExistsError):
+            self.run_main("--output", str(detailed), "--csv-output", str(experimental))
+        self.assertEqual(len(opened), 1)
+        self.assertTrue(opened[0].closed)
         self.env.close.assert_called_once_with()
         self.agent.select_action.assert_not_called()
 
