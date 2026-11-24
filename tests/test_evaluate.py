@@ -2,8 +2,10 @@
 
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 import csv
+import hashlib
 import importlib.util
 import io
+import os
 from pathlib import Path
 import random
 import sys
@@ -33,12 +35,25 @@ def make_agent():
     return agent
 
 
+def checkpoint_metadata(width=64, **config):
+    return {
+        "policy_state_dict": {
+            "layers.0.weight": SimpleNamespace(shape=(width, 9)),
+            "layers.2.weight": SimpleNamespace(shape=(width, width)),
+            "layers.4.weight": SimpleNamespace(shape=(9, width)),
+        },
+        "config": config,
+    }
+
+
 @contextmanager
-def mock_runtime(env, agent):
+def mock_runtime(env, agent, checkpoint):
     """Sustituye solo durante la prueba los imports pesados de main()."""
     env_class = Mock(return_value=env)
     agent_class = Mock(return_value=agent)
     torch = SimpleNamespace(
+        __version__="2.15.0+cpu",
+        load=Mock(return_value=checkpoint),
         cuda=SimpleNamespace(is_available=lambda: False),
         backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: False)),
         device=lambda name: name,
@@ -98,8 +113,8 @@ class ArgumentTests(unittest.TestCase):
     def test_experimental_defaults_and_arguments(self):
         defaults = evaluate.parse_args([])
         self.assertIsNone(defaults.csv_output)
-        self.assertEqual(defaults.configuracion, "Base64")
-        self.assertEqual(defaults.semilla_entrenamiento, 42)
+        self.assertIsNone(defaults.configuracion)
+        self.assertIsNone(defaults.semilla_entrenamiento)
         args = evaluate.parse_args([
             "--csv-output", "csv_results/nuevo.csv", "--configuracion", "Base32",
             "--semilla-entrenamiento", "7", "--seed", "900", "--random-start",
@@ -334,18 +349,76 @@ class MetricTests(unittest.TestCase):
         self.assertIn("Episodios completados: 0", output.getvalue())
 
 
+class CheckpointTests(unittest.TestCase):
+    def test_width_inferred_from_tensors_without_config(self):
+        data = b"checkpoint de prueba"
+        checkpoint = checkpoint_metadata(32)
+        checkpoint.pop("config")
+        torch = SimpleNamespace(__version__="2.15.0", load=Mock(return_value=checkpoint))
+        identity, loaded = evaluate.read_checkpoint(torch, data)
+        self.assertIs(loaded, checkpoint)
+        self.assertEqual(identity.configuration, "Base32")
+        self.assertIsNone(identity.training_seed)
+        self.assertEqual(identity.sha256, hashlib.sha256(data).hexdigest())
+        self.assertEqual(torch.load.call_args.args[0].getvalue(), data)
+        self.assertEqual(torch.load.call_args.kwargs, {
+            "map_location": "cpu", "weights_only": True,
+        })
+
+    def test_unsupported_pytorch_cannot_deserialize(self):
+        for version in ("2.9.1", "2.14.1", "2.15.0rc1"):
+            with self.subTest(version=version):
+                torch = SimpleNamespace(__version__=version, load=Mock())
+                with self.assertRaisesRegex(RuntimeError, "PyTorch estable"):
+                    evaluate.read_checkpoint(torch, b"checkpoint")
+                torch.load.assert_not_called()
+
+    def test_inherited_torch_flags_never_enable_unrestricted_load(self):
+        force = "TORCH_FORCE_WEIGHTS_ONLY_LOAD"
+        disable = "TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"
+        for enabled in (force, disable):
+            flags = {force: "0", disable: "0", enabled: "true"}
+            torch = SimpleNamespace(__version__="2.15.0",
+                                    load=Mock(return_value=checkpoint_metadata()))
+            with self.subTest(enabled=enabled), patch.dict(os.environ, flags):
+                evaluate.read_checkpoint(torch, b"checkpoint")
+                self.assertEqual(torch.load.call_count, 1)
+                self.assertIs(torch.load.call_args.kwargs["weights_only"], True)
+                self.assertEqual({key: os.environ[key] for key in flags}, flags)
+
+    def test_conflicting_torch_flags_fail_before_deserialization(self):
+        flags = {"TORCH_FORCE_WEIGHTS_ONLY_LOAD": "yes",
+                 "TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD": "1"}
+        torch = SimpleNamespace(__version__="2.15.0", load=Mock())
+        with patch.dict(os.environ, flags):
+            with self.assertRaisesRegex(RuntimeError, "TORCH_FORCE_"):
+                evaluate.read_checkpoint(torch, b"checkpoint")
+            torch.load.assert_not_called()
+            self.assertEqual({key: os.environ[key] for key in flags}, flags)
+
+    def test_malformed_checkpoint_has_clear_error_and_no_unsafe_retry(self):
+        error = IndexError("pop from empty list")
+        torch = SimpleNamespace(__version__="2.15.0", load=Mock(side_effect=error))
+        with self.assertRaisesRegex(ValueError, "weights_only=True") as result:
+            evaluate.read_checkpoint(torch, b"invalido")
+        self.assertIs(result.exception.__cause__, error)
+        self.assertEqual(torch.load.call_count, 1)
+        self.assertIs(torch.load.call_args.kwargs["weights_only"], True)
+
+
 class MainTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="test_evaluate_")
         self.addCleanup(self.temp.cleanup)
         self.directory = Path(self.temp.name)
         self.model = self.directory / "modelo_simulado.pt"
-        self.model.touch()  # Fixture vacía; agent.load se simula, no es un checkpoint.
+        self.model.touch()  # Fixture vacía; la deserialización de torch se simula.
         self.env, self.agent = make_env(), make_agent()
+        self.checkpoint = checkpoint_metadata(hidden_size=64, seed=42)
 
     def run_main(self, *arguments):
         output = io.StringIO()
-        with mock_runtime(self.env, self.agent) as classes:
+        with mock_runtime(self.env, self.agent, self.checkpoint) as classes:
             with patch.object(sys, "argv", ["evaluate.py", "--model", str(self.model), *arguments]):
                 with redirect_stdout(output):
                     evaluate.main()
@@ -354,7 +427,10 @@ class MainTests(unittest.TestCase):
     def test_original_command_with_mock_runtime(self):
         output, (env_class, _) = self.run_main("--episodes", "10", "--no-render")
         env_class.assert_called_once_with(render_mode=None)
-        self.agent.load.assert_called_once_with(str(self.model))
+        self.agent.load.assert_not_called()
+        self.agent.policy_net.load_state_dict.assert_called_once_with(
+            self.checkpoint["policy_state_dict"],
+        )
         self.agent.policy_net.eval.assert_called_once_with()
         self.env.close.assert_called_once_with()
         self.assertEqual(self.agent.select_action.call_count, 10)
@@ -380,7 +456,7 @@ class MainTests(unittest.TestCase):
         self.assertEqual(len(rows), 10)
         self.assertEqual([int(r["seed"]) for r in rows], list(range(42, 52)))
         self.assertEqual([int(r["episode"]) for r in rows], list(range(1, 11)))
-        self.assertTrue(all(r["model"] == str(self.model) for r in rows))
+        self.assertTrue(all(r["model"] == self.model.name for r in rows))
         self.assertTrue(all(r["random_start"] == "1" for r in rows))
         self.assertTrue(all(r["reward"] == "2.5" and r["steps"] == "1" for r in rows))
         self.assertTrue(all(r["terminated"] == "1" and r["truncated"] == "0" for r in rows))
@@ -395,7 +471,7 @@ class MainTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             self.run_main("--output", str(destination))
         self.assertEqual(destination.read_text(encoding="utf-8"), "evidencia original")
-        self.agent.load.assert_not_called()
+        self.agent.policy_net.load_state_dict.assert_not_called()
         self.env.reset.assert_not_called()
 
     def test_model_cannot_be_used_as_output(self):
@@ -409,7 +485,7 @@ class MainTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             self.run_main("--output", str(destination))
         self.assertFalse(destination.parent.exists())
-        self.agent.load.assert_not_called()
+        self.agent.policy_net.load_state_dict.assert_not_called()
 
     def test_model_directory_is_rejected(self):
         self.model = self.directory
@@ -417,7 +493,7 @@ class MainTests(unittest.TestCase):
             self.run_main()
 
     def test_load_failure_closes_environment_without_csv(self):
-        self.agent.load.side_effect = RuntimeError("fallo de carga simulado")
+        self.agent.policy_net.load_state_dict.side_effect = RuntimeError("fallo de carga simulado")
         destination = self.directory / "salida.csv"
         with self.assertRaisesRegex(RuntimeError, "fallo de carga simulado"):
             self.run_main("--output", str(destination))
@@ -477,13 +553,21 @@ class MainTests(unittest.TestCase):
 
     def test_exclusive_creation_protects_against_race(self):
         destination = self.directory / "ocupado.csv"
-        with patch.object(Path, "open", side_effect=FileExistsError("creado por otro proceso")):
+        original_open = Path.open
+
+        def racing_open(path, *args, **kwargs):
+            if path == destination:
+                raise FileExistsError("creado por otro proceso")
+            return original_open(path, *args, **kwargs)
+
+        with patch.object(Path, "open", racing_open):
             with self.assertRaises(FileExistsError):
                 self.run_main("--output", str(destination))
         self.env.close.assert_called_once_with()
         self.agent.select_action.assert_not_called()
 
     def test_experimental_csv_exact_contract_and_distinct_seeds(self):
+        self.checkpoint["config"]["seed"] = 7
         destination = self.directory / "experimentos" / "nuevo.csv"
         output, _ = self.run_main(
             "--episodes", "3", "--seed", "900", "--random-start", "--no-render",
@@ -593,7 +677,7 @@ class MainTests(unittest.TestCase):
             self.run_main("--output", str(detailed), "--csv-output", str(experimental))
         self.assertEqual(experimental.read_bytes(), historical_bytes)
         self.assertFalse(detailed.exists())
-        self.agent.load.assert_not_called()
+        self.agent.policy_net.load_state_dict.assert_not_called()
 
     def test_existing_detail_prevents_new_experimental_file(self):
         detailed = self.directory / "historico.csv"
@@ -603,13 +687,13 @@ class MainTests(unittest.TestCase):
             self.run_main("--output", str(detailed), "--csv-output", str(experimental))
         self.assertEqual(detailed.read_bytes(), b"evidencia existente\r\n")
         self.assertFalse(experimental.exists())
-        self.agent.load.assert_not_called()
+        self.agent.policy_net.load_state_dict.assert_not_called()
 
     def test_experimental_output_cannot_overwrite_checkpoint(self):
         with self.assertRaises(FileExistsError):
             self.run_main("--csv-output", str(self.model))
         self.assertEqual(self.model.read_bytes(), b"")
-        self.agent.load.assert_not_called()
+        self.agent.policy_net.load_state_dict.assert_not_called()
 
     def test_missing_checkpoint_creates_neither_output(self):
         self.model = self.directory / "ausente.pt"
@@ -621,7 +705,7 @@ class MainTests(unittest.TestCase):
         self.assertFalse(experimental.parent.exists())
 
     def test_load_failure_creates_neither_output_and_closes(self):
-        self.agent.load.side_effect = RuntimeError("carga simulada fallida")
+        self.agent.policy_net.load_state_dict.side_effect = RuntimeError("carga simulada fallida")
         detailed = self.directory / "detalle.csv"
         experimental = self.directory / "experimental.csv"
         with self.assertRaisesRegex(RuntimeError, "carga simulada fallida"):
@@ -638,17 +722,161 @@ class MainTests(unittest.TestCase):
 
         def racing_open(path, *args, **kwargs):
             if path == experimental:
+                with original_open(path, "x", encoding="utf-8") as other:
+                    other.write("resultado de otro proceso")
                 raise FileExistsError("ruta ocupada por otro proceso")
             handle = original_open(path, *args, **kwargs)
-            opened.append(handle)
+            if path == detailed:
+                opened.append(handle)
             return handle
 
         with patch.object(Path, "open", racing_open), self.assertRaises(FileExistsError):
             self.run_main("--output", str(detailed), "--csv-output", str(experimental))
         self.assertEqual(len(opened), 1)
         self.assertTrue(opened[0].closed)
+        self.assertFalse(detailed.exists())
+        self.assertEqual(experimental.read_text(encoding="utf-8"), "resultado de otro proceso")
         self.env.close.assert_called_once_with()
         self.agent.select_action.assert_not_called()
+
+    def test_experimental_labels_inferred_without_changing_evaluation_seed(self):
+        self.checkpoint = checkpoint_metadata(seed=123)
+        experimental = self.directory / "experimental.csv"
+        output, _ = self.run_main("--episodes", "1", "--csv-output", str(experimental))
+        with experimental.open(encoding="utf-8", newline="") as source:
+            row = next(csv.DictReader(source))
+        self.assertEqual(row["semilla"], "123")
+        self.assertEqual(row["configuracion"], "Base64")
+        self.assertEqual(self.env.reset.call_args.kwargs["seed"], 1000)
+        self.assertIn(hashlib.sha256(self.model.read_bytes()).hexdigest(), output)
+        self.assertNotIn(str(self.model), output)
+
+    def test_mismatched_labels_fail_before_environment_and_csv(self):
+        for checkpoint, label, message in (
+            (checkpoint_metadata(32, seed=42), ["--configuracion", "Base64"], "Base32"),
+            (checkpoint_metadata(seed=123), ["--semilla-entrenamiento", "42"], "config.seed"),
+            (checkpoint_metadata(hidden_size=32, seed=42), [], "config.hidden_size"),
+            (checkpoint_metadata(seed=None), [], "config.seed.*incompatible"),
+        ):
+            with self.subTest(label=label, message=message):
+                self.checkpoint = checkpoint
+                destination = self.directory / "experimental.csv"
+                with self.assertRaisesRegex(ValueError, message):
+                    self.run_main("--csv-output", str(destination), *label)
+                self.assertFalse(destination.exists())
+        self.env.reset.assert_not_called()
+        self.agent.policy_net.load_state_dict.assert_not_called()
+
+    def test_missing_seed_blocks_experiment_but_allows_detailed_csv(self):
+        self.checkpoint = checkpoint_metadata()
+        experimental = self.directory / "experimental.csv"
+        detailed = self.directory / "detalle.csv"
+        with self.assertRaisesRegex(ValueError, "sin config.seed"):
+            self.run_main("--csv-output", str(experimental), "--output", str(detailed),
+                          "--semilla-entrenamiento", "42")
+        self.assertFalse(experimental.exists())
+        self.assertFalse(detailed.exists())
+        self.env.reset.assert_not_called()
+        output, _ = self.run_main("--episodes", "1", "--output", str(detailed))
+        self.assertTrue(detailed.is_file())
+        self.assertIn("semilla de entrenamiento: ausente", output)
+
+    def test_evaluation_error_keeps_confirmed_rows_in_both_outputs(self):
+        self.env.step.side_effect = [
+            ([0], 4.0, True, False, {"success": 1}),
+            RuntimeError("fallo después del primer episodio"),
+        ]
+        paths = [self.directory / "detalle.csv", self.directory / "experimental.csv"]
+        with self.assertRaisesRegex(RuntimeError, "después del primer episodio"):
+            self.run_main("--episodes", "2", "--output", str(paths[0]),
+                          "--csv-output", str(paths[1]))
+        for path in paths:
+            with path.open(encoding="utf-8", newline="") as source:
+                rows = list(csv.DictReader(source))
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["reward"], "4.0")
+        self.env.close.assert_called_once_with()
+
+    def test_interruption_between_csv_writes_is_detected_and_recoverable(self):
+        detailed = self.directory / "detalle.csv"
+        experimental = self.directory / "experimental.csv"
+        manifest = self.directory / "detalle.csv.manifest.jsonl"
+        original = csv.DictWriter.writerow
+
+        def interrupt_second_output(writer, row):
+            if row.get("episodio") == 2:
+                raise KeyboardInterrupt
+            return original(writer, row)
+
+        with patch.object(csv.DictWriter, "writerow", interrupt_second_output):
+            with self.assertRaises(KeyboardInterrupt):
+                self.run_main("--episodes", "2", "--output", str(detailed),
+                              "--csv-output", str(experimental))
+        self.env.close.assert_called_once_with()
+        header, rows, status = evaluate.read_manifest(manifest)
+        self.assertEqual([r["episode"] for r in rows], [1, 2])
+        self.assertEqual(status, "sin cierre")
+        self.assertEqual(header["checkpoint"]["sha256"],
+                         hashlib.sha256(self.model.read_bytes()).hexdigest())
+        self.assertEqual(header["checkpoint"]["configuration"], "Base64")
+        self.assertEqual(header["checkpoint"]["training_seed"], 42)
+        self.assertEqual([r["seed"] for r in rows], [1000, 1001])
+        self.assertEqual(set(header["runtime"]), {"python", "pytorch", "device"})
+        self.assertIn("evaluate.py", header["code"]["source_sha256"])
+        self.assertNotIn(str(self.directory), manifest.read_text(encoding="utf-8"))
+        originals = {p: p.read_bytes() for p in (detailed, experimental, manifest, self.model)}
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(evaluate.manifest_exports(["verify-exports", str(manifest)]), 1)
+        self.assertIn("detalle.csv: alineado", output.getvalue())
+        self.assertIn("experimental.csv: desalineado", output.getvalue())
+
+        recovered = self.directory / "experimental-recuperado.csv"
+        with self.assertRaises(FileExistsError):
+            evaluate.manifest_exports(["recover-exports", str(manifest), "--output",
+                                       str(detailed), "--csv-output", str(recovered)])
+        self.assertFalse(recovered.exists())
+        recovered_detail = self.directory / "detalle-recuperado.csv"
+        self.assertEqual(evaluate.manifest_exports([
+            "recover-exports", str(manifest), "--output", str(recovered_detail),
+            "--csv-output", str(recovered),
+        ]), 0)
+        self.assertTrue(evaluate.verify_exports(manifest, recovered_detail, recovered))
+        self.assertEqual({p: p.read_bytes() for p in originals}, originals)
+
+    def test_write_error_in_first_csv_preserves_confirmed_records_in_manifest(self):
+        detailed = self.directory / "detalle.csv"
+        experimental = self.directory / "experimental.csv"
+        manifest = self.directory / "evaluacion.jsonl"
+        original = csv.DictWriter.writerow
+
+        def fail_write(writer, row):
+            if row.get("episode") == 2:
+                raise OSError("disco simulado")
+            return original(writer, row)
+
+        with patch.object(csv.DictWriter, "writerow", fail_write):
+            with self.assertRaisesRegex(OSError, "disco simulado"):
+                self.run_main("--episodes", "2", "--output", str(detailed),
+                              "--csv-output", str(experimental), "--manifest", str(manifest))
+        header, rows, status = evaluate.read_manifest(manifest)
+        self.assertEqual(status, "sin cierre")
+        self.assertEqual(len(rows), 2)
+        self.assertFalse(evaluate.verify_exports(manifest, detailed, experimental))
+        self.assertIsNotNone(header["code"]["git_head"] or header["code"]["source_sha256"])
+        self.env.close.assert_called_once_with()
+
+    def test_manifest_recovers_complete_prefix_after_partial_utf8_write(self):
+        detailed = self.directory / "detalle.csv"
+        manifest = self.directory / "ejecucion.jsonl"
+        self.env.step.side_effect = [([0], 2.5, True, False, {}), RuntimeError("fin simulado")]
+        with self.assertRaisesRegex(RuntimeError, "fin simulado"):
+            self.run_main("--episodes", "2", "--output", str(detailed), "--manifest", str(manifest))
+        with manifest.open("ab") as handle:
+            handle.write(b'{"kind":"episode","row":"\xc3')
+        self.assertEqual(evaluate.read_manifest(manifest)[2], "último registro incompleto")
+        self.assertTrue(evaluate.verify_exports(manifest, detailed, None))
 
 
 if __name__ == "__main__":

@@ -83,8 +83,9 @@ dispositivo conserva el orden CUDA, MPS y CPU, según disponibilidad.
 | `--random-start` | Desactivado | Activa las pequeñas variaciones de posición y orientación que ya ofrece el simulador. |
 | `--output` | Sin exportación | Ruta de un CSV nuevo; crea los directorios necesarios. |
 | `--csv-output` | Sin exportación | CSV experimental nuevo de ocho columnas, compatible con el análisis del integrante 3. |
-| `--configuracion` | `Base64` | Etiqueta experimental, por ejemplo `Base32`; no cambia la arquitectura ni el modelo. |
-| `--semilla-entrenamiento` | `42` | Semilla declarada del entrenamiento del checkpoint; entero no negativo, independiente de `--seed`. |
+| `--manifest` | Al lado del primer CSV con sufijo `.manifest.jsonl` | Ruta nueva del manifiesto de procedencia. En una ejecución sin CSV puede solicitarse explícitamente. |
+| `--configuracion` | Inferida de los pesos | Confirma la arquitectura con una etiqueta como `Base32` o `Base64`. |
+| `--semilla-entrenamiento` | Inferida de `config.seed` | Confirma la semilla de entrenamiento del checkpoint, independiente de `--seed`. |
 
 ### Inicio fijo e inicio aleatorio
 
@@ -115,7 +116,7 @@ model,episode,seed,random_start,reward,steps,success,collision,terminated,trunca
 ```
 
 `episode` comienza en 1; `seed` contiene la semilla efectiva de ese episodio.
-`model` conserva la ruta suministrada y `reward` es la suma sin descuento de las
+`model` contiene solo el nombre del checkpoint y `reward` es la suma sin descuento de las
 recompensas. `steps` cuenta las transiciones devueltas por el entorno. Los campos
 `random_start`, `success`, `collision`, `terminated` y `truncated` usan 0 o 1.
 
@@ -154,9 +155,11 @@ python evaluate.py --model results/best_model.pt --episodes 10 --seed 1000 --ran
 En ese ejemplo, `semilla` en el CSV experimental vale **42** en todas las filas
 porque identifica el entrenamiento; `seed` en el detallado recorre **1000–1009**
 porque controla cada reinicio de evaluación. `condicion` vale `fija` o `aleatoria`,
-según `--random-start`. La etiqueta y la semilla de entrenamiento son metadatos
-declarados por quien ejecuta: deben corresponder al checkpoint. No se infieren
-del nombre del archivo ni se usan para modificar la red o sus pesos.
+según `--random-start`. El evaluador comprueba el ancho de las capas en los
+tensores y lo contrasta con `config.hidden_size` si existe. Si se proporcionan
+la etiqueta o la semilla de entrenamiento, deben coincidir con el checkpoint.
+Si falta `config.seed`, se puede usar solo la salida detallada sin declarar
+una semilla de entrenamiento. Los metadatos incompatibles detienen la ejecución.
 
 El CSV experimental contiene **solo episodios completos**, incluidas las
 truncaciones por límite de pasos. No puede identificar interrupciones con sus
@@ -170,6 +173,34 @@ nuevo por modelo, semilla y condición, y coordina una consolidación en otro ar
 nuevo, conservando los originales y evitando duplicar episodios. El CSV de ocho
 columnas no registra las semillas de evaluación: acompáñalo del detallado o de
 la bitácora de ejecución para reproducir los reinicios.
+
+Si falla la preparación de una salida, el evaluador cierra y retira los archivos
+nuevos que alcanzó a crear antes de iniciar los episodios. Una vez preparada
+la exportación, cada registro se sincroniza en el manifiesto antes de escribirse
+en los CSV. Si falla una escritura, el evaluador conserva el manifiesto y las
+salidas disponibles, e indica cuáles coinciden con el registro.
+
+### Verificar y recuperar exportaciones
+
+Conserva juntos el manifiesto y los CSV de cada ejecución. El primer registro
+del JSONL incluye el nombre y SHA-256 del checkpoint, arquitectura, semilla de
+entrenamiento, configuración disponible, semilla inicial y regla de evaluación,
+commit de Git, huellas SHA-256 del código local, Python, PyTorch y dispositivo.
+Los registros siguientes incluyen las semillas efectivas y los datos de cada
+episodio. El nombre de la salida se guarda sin su ruta personal.
+
+```powershell
+python evaluate.py verify-exports results/detalle_Base64_s42_aleatoria_01.csv.manifest.jsonl
+python evaluate.py recover-exports results/detalle_Base64_s42_aleatoria_01.csv.manifest.jsonl --output results/detalle_recuperado.csv --csv-output results/experimental_recuperado.csv
+python evaluate.py verify-exports results/detalle_Base64_s42_aleatoria_01.csv.manifest.jsonl --output results/detalle_recuperado.csv --csv-output results/experimental_recuperado.csv
+```
+
+Si los CSV están en otra carpeta, pasa sus rutas con `--output` y `--csv-output`
+al verificar. La verificación compara columnas, orden y valores con el JSONL.
+Un manifiesto sin cierre se distingue de uno completado, incluso cuando sus
+CSV estén alineados con los episodios que alcanzaron a registrarse. La recuperación
+omite solo una línea final inconclusa, exige destinos nuevos y no reanuda la
+simulación. Dos CSV independientes no constituyen una escritura atómica.
 
 La columna `steps` conserva los pasos de cada episodio completo. El notebook
 promedia esos pasos para todos los episodios; la terminal muestra el promedio
@@ -199,9 +230,11 @@ analizar el CSV con la misma convención, filtra `terminated=1` o `truncated=1`.
 ### Reproducir y comparar modelos
 
 Conserva el mismo checkpoint, versión del código, versiones de las dependencias,
-dispositivo, modalidad de inicio y lista de semillas. Registra el hash del modelo
-si necesitas comprobar su identidad; el CSV contiene la ruta, no el contenido ni
-su hash. Diferentes dispositivos o versiones de PyTorch pueden producir diferencias
+dispositivo, modalidad de inicio y lista de semillas. El manifiesto conserva el
+nombre, SHA-256, arquitectura y semilla encontrada en el checkpoint. Registra
+también por separado la procedencia del archivo original.
+El CSV detallado conserva solo el nombre, así que dos archivos distintos pueden
+compartir el identificador. Diferentes dispositivos o versiones de PyTorch pueden producir diferencias
 numéricas: una semilla no garantiza igualdad entre plataformas.
 
 La semilla de evaluación controla las condiciones iniciales, no es la semilla
@@ -221,8 +254,19 @@ durante el entrenamiento. Compara resultados obtenidos bajo condiciones equivale
 
 La carga actual en esta base utiliza redes de **64 neuronas por capa oculta**.
 La validación de arquitecturas de 32 o 128 queda pendiente de que el equipo integre
-y apruebe `feature/agente-dqn`. Este módulo utiliza `DQNAgent.load()` sin copiar
-sus cambios ni adaptar arquitecturas por su cuenta.
+y apruebe la rama experimental que incluye `feature/agente-dqn`. En esta etapa
+el evaluador lee el checkpoint una sola vez con `weights_only=True` y carga
+solo los pesos de la política que construye el agente actual. Tras integrar la
+carga adaptable, la lectura restringida residirá en `DQNAgent.load()`.
+
+La evaluación de checkpoints usa deserialización restringida y requiere PyTorch
+estable 2.10–2.13 o 2.15 en adelante. Usa checkpoints de procedencia conocida.
+El mínimo de `requirements.txt` es anterior a la corrección requerida por este
+evaluador. La propuesta para la integración es `torch>=2.10,!=2.14.*`. La
+ejecución real de esta etapa verificó PyTorch 2.15.0. Si ambas variables
+`TORCH_FORCE_*` están activadas, el evaluador rechaza la configuración antes
+de leer el checkpoint. Consulta el [plan de integración](docs/evaluacion/preparacion_integracion.md)
+para ver el impacto y la validación pendiente.
 
 Después de integrar los cambios aprobados de `DQNAgent.load()` y disponer de los
 checkpoints correspondientes, se podrán validar ambas arquitecturas con la misma

@@ -1,0 +1,80 @@
+Auditoría de integración del integrante 4
+Fecha: 2026-11-24
+Rama: feature/evaluacion-reproducible. HEAD: 064acca. Commit anterior: e8a2d92.
+Referencias verificadas con git ls-remote: main db1c671, agente abe9d49, experimentos 1be444f.
+Registro resumido con las salidas de las verificaciones. Las rutas temporales y personales se omiten.
+
+SUITE DE EVALUACIÓN
+Comando en cada intérprete: python -X utf8 -B -m unittest discover -s tests -q
+Python 3.11.9
+----------------------------------------------------------------------
+Ran 55 tests in 7.672s
+
+OK
+Python 3.12.14
+----------------------------------------------------------------------
+Ran 55 tests in 11.637s
+
+OK
+La suite incluye mocks de agente y cargas, fixtures de checkpoint y una prueba con núcleo real y agente simulado.
+
+ENTORNO
+Comando: python -X utf8 -B check_environment.py
+{'python': '3.11.9', 'numpy': '2.4.6', 'gymnasium': '1.4.0', 'pygame': '2.6.1', 'torch': '2.15.0+cpu', 'cuda': False}
+Entorno correcto: espacios, transiciones y render fueron validados.
+
+EVALUACIÓN REAL
+Entrada: best_model.pt del entrenamiento base, suministrado fuera del repositorio.
+Comando por condición: python -X utf8 -B evaluate.py --model <checkpoint-base> --episodes 1 --seed 42 --configuracion Base64 --semilla-entrenamiento 42 --output <detalle-temporal.csv> --csv-output <experimental-temporal.csv>
+La condición fija usó SDL_VIDEODRIVER=dummy; la aleatoria añadió --random-start --no-render.
+REAL Python 3.11.9 PyTorch 2.15.0+cpu CheckpointIdentity(configuration='Base64', training_seed=42, sha256='8fca3c72f147cd94af182417e55e4093ed0f6ff8eaf3448e654650d51c04f5b1')
+fija retorno=161.6824351951651, pasos=326, éxito=1, colisión=0, semilla=42 ambos CSV válidos; fila detallada igual al histórico
+aleatoria retorno=161.73355527000086, pasos=326, éxito=1, colisión=0, semilla=42 ambos CSV válidos; fila detallada igual al histórico
+Checkpoint intacto. Fija con SDL dummy y aleatoria sin render. Dos episodios, sin entrenamiento.
+Se comprobó la cabecera exacta de los dos formatos y la equivalencia de reward, steps, success y collision. La línea de procedencia contiene el SHA-256 y el nombre del modelo. El control real no incluye los modelos del lote del integrante 3.
+
+DATOS PUBLICADOS
+Se leyó con git show origin/feature/experimentos:csv_results/<archivo>.csv y se recalculó con csv y statistics en Python 3.12.14.
+('Aleatorio', 'Aleatorio', 'aleatoria') 0.0 73.33333333333333 4.239803604341059
+('Aleatorio', 'Aleatorio', 'fija') 0.0 70.0 5.464070297298385
+('DQN', 'Base32', 'aleatoria') 100.0 0.0 160.12807738993754 299.3333333333333
+('DQN', 'Base32', 'fija') 100.0 0.0 160.17174267475085 299.3333333333333
+('DQN', 'Base64', 'aleatoria') 100.0 0.0 160.25805834073594 301.8333333333333
+('DQN', 'Base64', 'fija') 100.0 0.0 160.18016743461894 301.3333333333333
+('Heuristico', 'Heuristico', 'aleatoria') 100.0 0.0 164.58771967656995 546.7666666666667
+('Heuristico', 'Heuristico', 'fija') 100.0 0.0 164.62924921724726 547.0
+120 DQN + 120 referencias = 240; claves únicas; 24 grupos; episodios 1 a 10; semillas 42, 123 y 999.
+Diferencias de representación: 33 Counter({'reward': 33}) máximo: 2.842170943040401e-14
+Resumen por semilla y desviación muestral: coinciden a tolerancia absoluta 1e-10.
+Base64 experimental semilla 42 fija: [100.0, 0.0, 159.61080719454924, 294.0]
+
+NOTEBOOKS
+Se leyeron con git show origin/feature/experimentos:notebooks/<archivo>.ipynb. Las celdas se ejecutaron en memoria desde Python 3.11.9 con Matplotlib Agg, archivos originales de entrada y un directorio de trabajo temporal.
+Matplotlib is building the font cache; this may take a moment.
+Entorno matplotlib 3.11.2
+Entorno ipykernel ausente
+Entorno jupyterlab ausente
+Entorno nbconvert ausente
+Pandas: 2.3.3
+NumPy: 2.4.6
+Notebook original falla por ruta: experimental
+Pandas: 2.3.3
+NumPy: 2.4.6
+Archivo utilizado: csv_results\evaluation_results.csv
+Filas: 120
+Configuraciones: ['Base32', 'Base64']
+Semillas: [np.int64(42), np.int64(123), np.int64(999)]
+Condiciones: ['aleatoria', 'fija']
+Archivos exportados:
+resumen_por_semilla.csv
+resumen_estadistico.csv
+Celdas ejecutadas: experimental 11 figuras: 5
+Notebook original falla por ruta: entrenamiento
+(145, 18)
+Celdas ejecutadas: entrenamiento 5 figuras: 1
+Exportación experimental comprobada en temporal. Rutas adaptadas solo en memoria.
+
+LÍMITES
+Instalación desde cero y ejecución nativa en Jupyter pendientes.
+Validación integrada de Base32/Base64, referencias integradas y reproducción de los 240 episodios bloqueadas.
+No se repitieron entrenamientos ni el lote publicado.
