@@ -1,0 +1,3 @@
+model,episode,seed,random_start,reward,steps,success,collision,terminated,truncated
+best_model.pt,1,42,0,161.6824351951651,326,1,0,1,0
+best_model.pt,2,43,0,161.6824351951651,326,1,0,1,0

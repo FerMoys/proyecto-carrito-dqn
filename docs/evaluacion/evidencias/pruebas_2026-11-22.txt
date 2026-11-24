@@ -1,0 +1,48 @@
+Fecha de trabajo: 2026-11-22 (America/Guatemala)
+Rama: feature/evaluacion-reproducible
+Intérprete: Python 3.12.14
+Comando: & 'python' -B -m unittest discover -s tests -p test_evaluate.py -v
+Tipo: pruebas unitarias con mocks; prueba de CarSimulator real con agente simulado. Sin checkpoints entrenados.
+
+test_invalid_arguments (test_evaluate.ArgumentTests.test_invalid_arguments) ... ok
+test_new_command (test_evaluate.ArgumentTests.test_new_command) ... ok
+test_original_command (test_evaluate.ArgumentTests.test_original_command) ... ok
+test_original_defaults (test_evaluate.ArgumentTests.test_original_defaults) ... ok
+test_zero_seed_is_valid (test_evaluate.ArgumentTests.test_zero_seed_is_valid) ... ok
+test_accumulates_reward_and_counts_actual_steps (test_evaluate.EvaluationTests.test_accumulates_reward_and_counts_actual_steps) ... ok
+test_close_on_terminal_transition_still_counts_complete (test_evaluate.EvaluationTests.test_close_on_terminal_transition_still_counts_complete) ... ok
+test_closed_before_start_produces_no_rows (test_evaluate.EvaluationTests.test_closed_before_start_produces_no_rows) ... ok
+test_closed_during_reset_records_started_episode (test_evaluate.EvaluationTests.test_closed_during_reset_records_started_episode) ... ok
+test_fixed_start_seeds_steps_and_no_exploration (test_evaluate.EvaluationTests.test_fixed_start_seeds_steps_and_no_exploration) ... ok
+test_interrupt_during_action_selection_records_zero_steps (test_evaluate.EvaluationTests.test_interrupt_during_action_selection_records_zero_steps) ... ok
+test_interrupt_during_reset_does_not_invent_episode (test_evaluate.EvaluationTests.test_interrupt_during_reset_does_not_invent_episode) ... ok
+test_keyboard_interrupt_preserves_partial_episode (test_evaluate.EvaluationTests.test_keyboard_interrupt_preserves_partial_episode) ... ok
+test_programmatic_validation (test_evaluate.EvaluationTests.test_programmatic_validation) ... ok
+test_reproducibility_real_simulator_with_mock_agent (test_evaluate.EvaluationTests.test_reproducibility_real_simulator_with_mock_agent) ... ok
+test_same_seeds_reproduce_rows_with_simulated_environment (test_evaluate.EvaluationTests.test_same_seeds_reproduce_rows_with_simulated_environment) ... ok
+test_truncated_episode_is_complete (test_evaluate.EvaluationTests.test_truncated_episode_is_complete) ... ok
+test_window_close_records_only_confirmed_transition (test_evaluate.EvaluationTests.test_window_close_records_only_confirmed_transition) ... ok
+test_ctrl_c_exports_partial_row_and_reports_counts (test_evaluate.MainTests.test_ctrl_c_exports_partial_row_and_reports_counts) ... ok
+test_exclusive_creation_protects_against_race (test_evaluate.MainTests.test_exclusive_creation_protects_against_race) ... ok
+test_existing_csv_is_preserved_before_model_load (test_evaluate.MainTests.test_existing_csv_is_preserved_before_model_load) ... ok
+test_initial_reset_failure_closes_environment (test_evaluate.MainTests.test_initial_reset_failure_closes_environment) ... ok
+test_load_failure_closes_environment_without_csv (test_evaluate.MainTests.test_load_failure_closes_environment_without_csv) ... ok
+test_missing_model_does_not_create_output (test_evaluate.MainTests.test_missing_model_does_not_create_output) ... ok
+test_model_cannot_be_used_as_output (test_evaluate.MainTests.test_model_cannot_be_used_as_output) ... ok
+test_model_directory_is_rejected (test_evaluate.MainTests.test_model_directory_is_rejected) ... ok
+test_new_command_exports_ten_rows_and_exact_columns (test_evaluate.MainTests.test_new_command_exports_ten_rows_and_exact_columns) ... ok
+test_original_command_with_mock_runtime (test_evaluate.MainTests.test_original_command_with_mock_runtime) ... ok
+test_render_remains_enabled_by_default (test_evaluate.MainTests.test_render_remains_enabled_by_default) ... ok
+test_reset_interruption_exports_header_without_invented_rows (test_evaluate.MainTests.test_reset_interruption_exports_header_without_invented_rows) ... ok
+test_step_failure_preserves_completed_rows_and_closes (test_evaluate.MainTests.test_step_failure_preserves_completed_rows_and_closes) ... ok
+test_exact_metrics_exclude_interrupted_episode (test_evaluate.MetricTests.test_exact_metrics_exclude_interrupted_episode) ... ok
+test_no_completed_episodes_has_no_performance_metrics (test_evaluate.MetricTests.test_no_completed_episodes_has_no_performance_metrics) ... ok
+test_one_episode_std_zero_and_no_success_steps (test_evaluate.MetricTests.test_one_episode_std_zero_and_no_success_steps) ... ok
+test_summary_handles_no_data (test_evaluate.MetricTests.test_summary_handles_no_data) ... ok
+
+----------------------------------------------------------------------
+Ran 35 tests in 1.054s
+
+OK
+
+Nota de publicación (2026-11-24): se anonimizaron únicamente las rutas del usuario, del intérprete y del checkpoint. Se conservaron mensajes técnicos, semillas y resultados numéricos. Los SHA-256 de los CSV se recalcularon tras cambiar solo model; corresponden a los archivos locales con CRLF. Los hashes de publicación con LF se detallan en validacion_checkpoint_2026-11-23.md.

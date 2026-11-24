@@ -1,0 +1,178 @@
+Fecha: 2026-11-23 (America/Guatemala)
+Rama: feature/evaluacion-reproducible
+Modelo evaluado: best_model.pt proporcionado por el integrante 2.
+No se entrenaron modelos ni se modificaron checkpoints. Los registros siguientes son salidas reales.
+
+=== Inspección de checkpoints proporcionados; lectura con weights_only=True ===
+PyTorch: 2.15.0+cpu
+
+Checkpoint: best_model.pt
+SHA256: 8fca3c72f147cd94af182417e55e4093ed0f6ff8eaf3448e654650d51c04f5b1
+Claves: ['policy_state_dict', 'target_state_dict', 'optimizer_state_dict', 'total_steps', 'config']
+Config: {'episodes': 600, 'hidden_size': 64, 'learning_rate': 0.0003, 'gamma': 0.99, 'batch_size': 128, 'replay_capacity': 50000, 'learning_starts': 1000, 'epsilon_start': 1.0, 'epsilon_end': 0.05, 'epsilon_decay_steps': 45000, 'tau': 0.005, 'gradient_clip': 10.0, 'seed': 42, 'success_window': 30, 'early_stop_rate': 0.9}
+Total_steps: 45552
+Capas: {'layers.0.weight': [64, 9], 'layers.0.bias': [64], 'layers.2.weight': [64, 64], 'layers.2.bias': [64], 'layers.4.weight': [9, 64], 'layers.4.bias': [9]}
+
+Checkpoint: final_model.pt
+SHA256: a6aae0e6395290c273f387026509381cc3632d7091ba45c9b3d5994108b3f8b2
+Claves: ['policy_state_dict', 'target_state_dict', 'optimizer_state_dict', 'total_steps', 'config']
+Config: {'episodes': 600, 'hidden_size': 64, 'learning_rate': 0.0003, 'gamma': 0.99, 'batch_size': 128, 'replay_capacity': 50000, 'learning_starts': 1000, 'epsilon_start': 1.0, 'epsilon_end': 0.05, 'epsilon_decay_steps': 45000, 'tau': 0.005, 'gradient_clip': 10.0, 'seed': 42, 'success_window': 30, 'early_stop_rate': 0.9}
+Total_steps: 45552
+Capas: {'layers.0.weight': [64, 9], 'layers.0.bias': [64], 'layers.2.weight': [64, 64], 'layers.2.bias': [64], 'layers.4.weight': [9, 64], 'layers.4.bias': [9]}
+
+Episodios entrenamiento: 145
+Ultimos 30: exitos= 27 colisiones= 3 reward_mean= 152.44845565474043
+Exitos totales: 28
+Colisiones totales: 115
+
+=== Evaluaciones reales desde CLI: diez episodios fijos y diez aleatorios ===
+
+=== Inicio fijo ===
+Comando: python -X utf8 -B evaluate.py --model best_model.pt --episodes 10 --seed 42 --no-render --output results\evaluacion_best_fija_py311_20261123_01.csv
+Episodio 1: {'model': 'best_model.pt', 'episode': 1, 'seed': 42, 'random_start': 0, 'reward': 161.6824351951651, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 2: {'model': 'best_model.pt', 'episode': 2, 'seed': 43, 'random_start': 0, 'reward': 161.6824351951651, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 3: {'model': 'best_model.pt', 'episode': 3, 'seed': 44, 'random_start': 0, 'reward': 161.6824351951651, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 4: {'model': 'best_model.pt', 'episode': 4, 'seed': 45, 'random_start': 0, 'reward': 161.6824351951651, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 5: {'model': 'best_model.pt', 'episode': 5, 'seed': 46, 'random_start': 0, 'reward': 161.6824351951651, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 6: {'model': 'best_model.pt', 'episode': 6, 'seed': 47, 'random_start': 0, 'reward': 161.6824351951651, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 7: {'model': 'best_model.pt', 'episode': 7, 'seed': 48, 'random_start': 0, 'reward': 161.6824351951651, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 8: {'model': 'best_model.pt', 'episode': 8, 'seed': 49, 'random_start': 0, 'reward': 161.6824351951651, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 9: {'model': 'best_model.pt', 'episode': 9, 'seed': 50, 'random_start': 0, 'reward': 161.6824351951651, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 10: {'model': 'best_model.pt', 'episode': 10, 'seed': 51, 'random_start': 0, 'reward': 161.6824351951651, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Resumen (métricas sobre episodios completos):
+  Retorno promedio: 161.682435
+  Desviación estándar del retorno (poblacional): 0.000000
+  Tasa de éxito: 100.00%
+  Tasa de colisión: 0.00%
+  Pasos promedio en episodios exitosos: 326.00
+  Episodios completados: 10
+  Episodios interrumpidos: 0
+CSV guardado en: results\evaluacion_best_fija_py311_20261123_01.csv
+
+Codigo de salida: 0
+CSV verificado: diez filas completas, columnas exactas, episodios 1-10, semillas 42-51 y modalidad correcta.
+
+=== Inicio aleatorio ===
+Comando: python -X utf8 -B evaluate.py --model best_model.pt --episodes 10 --seed 42 --no-render --output results\evaluacion_best_aleatoria_py311_20261123_01.csv --random-start
+Episodio 1: {'model': 'best_model.pt', 'episode': 1, 'seed': 42, 'random_start': 1, 'reward': 161.73355527000086, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 2: {'model': 'best_model.pt', 'episode': 2, 'seed': 43, 'random_start': 1, 'reward': 161.78168365349316, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 3: {'model': 'best_model.pt', 'episode': 3, 'seed': 44, 'random_start': 1, 'reward': 161.98786255853386, 'steps': 327, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 4: {'model': 'best_model.pt', 'episode': 4, 'seed': 45, 'random_start': 1, 'reward': 161.91119026534778, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 5: {'model': 'best_model.pt', 'episode': 5, 'seed': 46, 'random_start': 1, 'reward': 161.88183752139855, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 6: {'model': 'best_model.pt', 'episode': 6, 'seed': 47, 'random_start': 1, 'reward': 161.79380189408568, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 7: {'model': 'best_model.pt', 'episode': 7, 'seed': 48, 'random_start': 1, 'reward': 161.71731700874943, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 8: {'model': 'best_model.pt', 'episode': 8, 'seed': 49, 'random_start': 1, 'reward': 161.82255948208763, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 9: {'model': 'best_model.pt', 'episode': 9, 'seed': 50, 'random_start': 1, 'reward': 161.80631471828735, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 10: {'model': 'best_model.pt', 'episode': 10, 'seed': 51, 'random_start': 1, 'reward': 161.75700520705172, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Resumen (métricas sobre episodios completos):
+  Retorno promedio: 161.819313
+  Desviación estándar del retorno (poblacional): 0.080403
+  Tasa de éxito: 100.00%
+  Tasa de colisión: 0.00%
+  Pasos promedio en episodios exitosos: 326.10
+  Episodios completados: 10
+  Episodios interrumpidos: 0
+CSV guardado en: results\evaluacion_best_aleatoria_py311_20261123_01.csv
+
+Codigo de salida: 0
+CSV verificado: diez filas completas, columnas exactas, episodios 1-10, semillas 42-51 y modalidad correcta.
+
+=== Repetición aleatoria y demostración Pygame: evaluate.main() real, sin mocks ===
+Ejecuciones reales mediante evaluate.main(), sin mocks ni entrenamiento.
+
+=== Repeticion aleatoria con las mismas semillas ===
+Argumentos: ['evaluate.py', '--model', 'best_model.pt', '--episodes', '10', '--seed', '42', '--random-start', '--no-render', '--output', 'results\\evaluacion_best_aleatoria_py311_20261123_02.csv']
+Episodio 1: {'model': 'best_model.pt', 'episode': 1, 'seed': 42, 'random_start': 1, 'reward': 161.73355527000086, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 2: {'model': 'best_model.pt', 'episode': 2, 'seed': 43, 'random_start': 1, 'reward': 161.78168365349316, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 3: {'model': 'best_model.pt', 'episode': 3, 'seed': 44, 'random_start': 1, 'reward': 161.98786255853386, 'steps': 327, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 4: {'model': 'best_model.pt', 'episode': 4, 'seed': 45, 'random_start': 1, 'reward': 161.91119026534778, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 5: {'model': 'best_model.pt', 'episode': 5, 'seed': 46, 'random_start': 1, 'reward': 161.88183752139855, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 6: {'model': 'best_model.pt', 'episode': 6, 'seed': 47, 'random_start': 1, 'reward': 161.79380189408568, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 7: {'model': 'best_model.pt', 'episode': 7, 'seed': 48, 'random_start': 1, 'reward': 161.71731700874943, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 8: {'model': 'best_model.pt', 'episode': 8, 'seed': 49, 'random_start': 1, 'reward': 161.82255948208763, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 9: {'model': 'best_model.pt', 'episode': 9, 'seed': 50, 'random_start': 1, 'reward': 161.80631471828735, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 10: {'model': 'best_model.pt', 'episode': 10, 'seed': 51, 'random_start': 1, 'reward': 161.75700520705172, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Resumen (métricas sobre episodios completos):
+  Retorno promedio: 161.819313
+  Desviación estándar del retorno (poblacional): 0.080403
+  Tasa de éxito: 100.00%
+  Tasa de colisión: 0.00%
+  Pasos promedio en episodios exitosos: 326.10
+  Episodios completados: 10
+  Episodios interrumpidos: 0
+CSV guardado en: results\evaluacion_best_aleatoria_py311_20261123_02.csv
+Reproducibilidad real: ambos CSV aleatorios son identicos byte por byte.
+
+=== Demostracion Pygame: 2 episodios con inicio fijo ===
+Argumentos: ['evaluate.py', '--model', 'best_model.pt', '--episodes', '2', '--seed', '42', '--output', 'results\\evaluacion_best_visual_py311_20261123_01.csv']
+Episodio 1: {'model': 'best_model.pt', 'episode': 1, 'seed': 42, 'random_start': 0, 'reward': 161.6824351951651, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Episodio 2: {'model': 'best_model.pt', 'episode': 2, 'seed': 43, 'random_start': 0, 'reward': 161.6824351951651, 'steps': 326, 'success': 1, 'collision': 0, 'terminated': 1, 'truncated': 0}
+Resumen (métricas sobre episodios completos):
+  Retorno promedio: 161.682435
+  Desviación estándar del retorno (poblacional): 0.000000
+  Tasa de éxito: 100.00%
+  Tasa de colisión: 0.00%
+  Pasos promedio en episodios exitosos: 326.00
+  Episodios completados: 2
+  Episodios interrumpidos: 0
+CSV guardado en: results\evaluacion_best_visual_py311_20261123_01.csv
+Filas visuales: 2 Episodios completos: 2
+La ejecucion real de Pygame termino y el entorno fue cerrado.
+
+=== Validación independiente de CSV, métricas, repetición y hashes originales ===
+{
+  "fija": {
+    "csv": "results\\evaluacion_best_fija_py311_20261123_01.csv",
+    "episodes_completed": 10,
+    "episodes_interrupted": 0,
+    "reward_mean": 161.6824351951651,
+    "reward_std": 0.0,
+    "success_rate": 1.0,
+    "collision_rate": 0.0,
+    "steps_success_mean": 326.0,
+    "sha256": "ee56c24ffb8a5d855bf08ab59b106cb515a40e26ad82f23470a44e9a7f0a9beb"
+  },
+  "aleatoria": {
+    "csv": "results\\evaluacion_best_aleatoria_py311_20261123_01.csv",
+    "episodes_completed": 10,
+    "episodes_interrupted": 0,
+    "reward_mean": 161.8193127579036,
+    "reward_std": 0.08040261942877586,
+    "success_rate": 1.0,
+    "collision_rate": 0.0,
+    "steps_success_mean": 326.1,
+    "sha256": "5f3ae68a99a01f347890781f4410921b90bf147283705e165da2c881410c02d9"
+  },
+  "repeticion_aleatoria": {
+    "csv": "results\\evaluacion_best_aleatoria_py311_20261123_02.csv",
+    "episodes_completed": 10,
+    "episodes_interrupted": 0,
+    "reward_mean": 161.8193127579036,
+    "reward_std": 0.08040261942877586,
+    "success_rate": 1.0,
+    "collision_rate": 0.0,
+    "steps_success_mean": 326.1,
+    "sha256": "5f3ae68a99a01f347890781f4410921b90bf147283705e165da2c881410c02d9"
+  },
+  "visual": {
+    "csv": "results\\evaluacion_best_visual_py311_20261123_01.csv",
+    "episodes_completed": 2,
+    "episodes_interrupted": 0,
+    "reward_mean": 161.6824351951651,
+    "reward_std": 0.0,
+    "success_rate": 1.0,
+    "collision_rate": 0.0,
+    "steps_success_mean": 326.0,
+    "sha256": "15b2a86919cb8380c39481106d6bf5866d648d0fe9df3cf76c397f1c616fc9a8"
+  },
+  "comparacion_integrante2": {
+    "reported_reward_mean": 161.68243519516508,
+    "fixed_reward_difference": 2.842170943040401e-14,
+    "coincide_tol_1e_10": true
+  }
+}
+CSV: columnas, filas, semillas, modalidades y completitud verificadas.
+Repeticion aleatoria: identidad byte por byte verificada.
+Checkpoints originales: SHA256 sin cambios.
+
+Nota de publicación (2026-11-24): se anonimizaron únicamente las rutas del usuario, del intérprete y del checkpoint. Se conservaron mensajes técnicos, semillas y resultados numéricos. Los SHA-256 de los CSV se recalcularon tras cambiar solo model; corresponden a los archivos locales con CRLF. Los hashes de publicación con LF se detallan en validacion_checkpoint_2026-11-23.md.
