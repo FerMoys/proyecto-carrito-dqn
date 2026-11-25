@@ -437,7 +437,7 @@ La evidencia de ejecución y las comprobaciones pendientes se encuentran en
 reporte individual está en
 [docs/evaluacion/reporte_integrante4.md](docs/evaluacion/reporte_integrante4.md).
 
-## Entregables académicos
+## Entregables 
 
 - [Bitácora del proyecto](docs/bitacora_proyecto.md). Configuración, semillas, incidencias y decisiones verificadas.
 - [Evidencia cuantitativa](docs/evidencia_cuantitativa.md). Tablas, figuras, huellas de los insumos y pasos de regeneración.
