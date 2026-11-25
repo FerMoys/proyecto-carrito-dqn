@@ -512,7 +512,8 @@ def main() -> int:
         observation, _ = env.reset(
             seed=args.seed, options={"random_start": args.random_start}
         )
-        train_config = TrainConfig()
+        hidden_size = int(identity.configuration.removeprefix("Base"))
+        train_config = TrainConfig(hidden_size=hidden_size)
         agent = DQNAgent(
             observation_size=len(observation),
             action_size=env.action_space.n,

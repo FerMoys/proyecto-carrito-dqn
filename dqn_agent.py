@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
+from dataclasses import replace
 import math
 import random
 from typing import Deque, Dict, Tuple
@@ -176,6 +177,23 @@ class DQNAgent:
 
     def load(self, path: str) -> None:
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+        saved_config = checkpoint.get("config", {})
+        saved_hidden = int(saved_config.get("hidden_size", self.config.hidden_size))
+        if saved_hidden != self.config.hidden_size:
+            obs_size = self.policy_net.layers[0].in_features
+            self.config = replace(self.config, hidden_size=saved_hidden)
+            self.policy_net = QNetwork(obs_size, self.action_size, saved_hidden).to(
+                self.device
+            )
+            self.target_net = QNetwork(obs_size, self.action_size, saved_hidden).to(
+                self.device
+            )
+            self.target_net.eval()
+            self.optimizer = torch.optim.AdamW(
+                self.policy_net.parameters(),
+                lr=self.config.learning_rate,
+                amsgrad=True,
+            )
         self.policy_net.load_state_dict(checkpoint["policy_state_dict"])
         self.target_net.load_state_dict(checkpoint["target_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
