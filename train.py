@@ -8,6 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 import random
 from statistics import mean
+from tempfile import mkdtemp
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -31,8 +32,22 @@ def parse_args() -> argparse.Namespace:
         "--epsilon-decay", type=int, default=TrainConfig.epsilon_decay_steps
     )
     parser.add_argument("--lr", type=float, default=TrainConfig.learning_rate)
-    parser.add_argument("--output", type=Path, default=Path("results"))
+    parser.add_argument(
+        "--output", type=Path,
+        help="directorio nuevo para esta ejecución (por defecto, uno exclusivo dentro de results/)",
+    )
     return parser.parse_args()
+
+
+def reserve_output(destination: Path | None) -> Path:
+    """Reserva un directorio que ningún entrenamiento anterior haya utilizado."""
+    if destination is not None:
+        destination.mkdir(parents=True, exist_ok=False)
+        return destination
+
+    parent = Path.cwd() / "results"
+    parent.mkdir(exist_ok=True)
+    return Path(mkdtemp(prefix="entrenamiento-", dir=parent))
 
 
 def set_seeds(seed: int) -> None:
@@ -95,7 +110,16 @@ def evaluate_without_render(
 
 def main() -> None:
     args = parse_args()
-    args.output.mkdir(parents=True, exist_ok=True)
+    try:
+        args.output = reserve_output(args.output)
+    except FileExistsError as error:
+        raise SystemExit(
+            f"El destino de entrenamiento ya existe: {error.filename}. "
+            "Elige un directorio nuevo con --output."
+        ) from None
+    except OSError as error:
+        raise SystemExit(f"No se pudo preparar el destino de entrenamiento: {error}") from None
+    print(f"Directorio de entrenamiento: {args.output.resolve()}")
     train_config = replace(
         TrainConfig(),
         episodes=args.episodes,

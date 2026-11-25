@@ -26,68 +26,167 @@ uv --no-cache pip check --python $ProyectoPython
 - **Notebooks.** `requirements-notebooks.txt` añade JupyterLab, ipykernel y nbconvert al entorno del proyecto.
 - **Pruebas automatizadas.** La suite usa `unittest` de Python y las dependencias de ejecución. Para automatizar notebooks se instala el complemento de Jupyter descrito abajo.
 
+## Inicio rápido
+
+Desde la raíz y en la misma terminal de PowerShell, puedes abrir la conducción
+manual, ejecutar los agentes de referencia o probar dos pasos de entrenamiento:
+
+```powershell
+& $ProyectoPython -X utf8 -B manual_drive.py
+& $ProyectoPython -X utf8 -B random_baseline.py
+& $ProyectoPython -X utf8 -B heuristic_baseline.py
+& $ProyectoPython -X utf8 -B train.py --episodes 1 --max-steps 2 --hidden-size 32
+```
+
+El último comando es un diagnóstico. Cada entrenamiento sin `--output` crea
+un directorio propio `results/entrenamiento-.../` y muestra su ruta al iniciar.
+Si indicas `--output`, el directorio final debe ser nuevo, incluso si el destino
+existente está vacío. El entrenador conserva cualquier corrida parcial y exige
+otra ruta para volver a iniciar. Los checkpoints, el log y la gráfica de cada
+corrida se guardan en su directorio. Para evaluar una política ya entrenada,
+puedes usar el paquete de demostración directamente.
+
+## Demostración Base64 con el paquete de entrega
+
+Obtén `result_model_prueba.zip` de los materiales entregados por el equipo. El ZIP
+se distribuye por separado y la carpeta local `results_demo_base64/` está
+excluida de Git. El ZIP entregado contiene `best_model.pt` y `training_log.csv`
+en su raíz. Extrae solo una vez, desde la raíz del proyecto, en PowerShell:
+
+```powershell
+$Paquete = Read-Host "Ruta al archivo result_model_prueba.zip recibido"
+if (-not $Paquete -or -not (Test-Path -LiteralPath $Paquete -PathType Leaf)) {
+    throw "Falta el ZIP de entrega. Solicita result_model_prueba.zip al equipo."
+}
+$DemoBase64 = Join-Path (Get-Location).Path "results_demo_base64"
+New-Item -ItemType Directory -Path $DemoBase64 -ErrorAction Stop | Out-Null
+Expand-Archive -LiteralPath $Paquete -DestinationPath $DemoBase64 -ErrorAction Stop
+```
+
+Si ya recibiste los archivos sueltos, coloca los originales `best_model.pt`
+y `training_log.csv` en `results_demo_base64/`. Si ya tienes el paquete extraído,
+continúa con este bloque. Vuelve a ejecutarlo si abres otra terminal:
+
+```powershell
+$DemoBase64 = Join-Path (Get-Location).Path "results_demo_base64"
+$ModeloBase64 = Join-Path $DemoBase64 "best_model.pt"
+$LogBase64 = Join-Path $DemoBase64 "training_log.csv"
+$HuellasDemo = @{
+    $ModeloBase64 = "8fca3c72f147cd94af182417e55e4093ed0f6ff8eaf3448e654650d51c04f5b1"
+    $LogBase64 = "2dd65a595cc5378e6fbad9007501ce5731656849f8cf92cb90303962ce187ab8"
+}
+foreach ($Archivo in $HuellasDemo.Keys) {
+    if (-not (Test-Path -LiteralPath $Archivo -PathType Leaf)) {
+        throw "Falta $(Split-Path -Leaf $Archivo). Extrae el ZIP de entrega o coloca el archivo original en results_demo_base64/."
+    }
+    $Actual = (Get-FileHash -LiteralPath $Archivo -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($Actual -ne $HuellasDemo[$Archivo]) {
+        throw "SHA-256 incorrecto para $(Split-Path -Leaf $Archivo)."
+    }
+}
+```
+
+Ejecuta diez episodios con inicio fijo y diez con inicio aleatorio. Cada modo
+genera un CSV detallado, un CSV experimental y un manifiesto JSONL. Las
+exportaciones quedan en una carpeta nueva bajo `results_demo_base64/evaluaciones/`:
+
+```powershell
+if (-not $ModeloBase64 -or -not (Test-Path -LiteralPath $ModeloBase64 -PathType Leaf)) {
+    throw "Primero prepara y verifica el paquete Base64."
+}
+$CorridaDemo = Join-Path $DemoBase64 ("evaluaciones/" + [guid]::NewGuid().ToString("N"))
+$OpcionesDemo = @("--model", $ModeloBase64, "--episodes", "10", "--seed", "42",
+                  "--no-render", "--configuracion", "Base64", "--semilla-entrenamiento", "42")
+foreach ($Modo in @("fija", "aleatoria")) {
+    $Inicio = @()
+    if ($Modo -eq "aleatoria") { $Inicio = @("--random-start") }
+    $SalidasDemo = @("--output", (Join-Path $CorridaDemo "$Modo-detalle.csv"),
+                     "--csv-output", (Join-Path $CorridaDemo "$Modo-experimental.csv"),
+                     "--manifest", (Join-Path $CorridaDemo "$Modo.jsonl"))
+    & $ProyectoPython -X utf8 -B evaluate.py @OpcionesDemo @Inicio @SalidasDemo
+    if ($LASTEXITCODE -ne 0) { throw "Falló la evaluación $Modo." }
+}
+$CorridaDemo
+```
+
+Para la demostración visual en un escritorio con Pygame, usa el mismo checkpoint
+verificado y omite `--no-render`. La ventana muestra sensores, acción, velocidad
+y avance. Puedes cerrarla o terminar con Ctrl+C.
+
+```powershell
+if (-not $ModeloBase64 -or -not (Test-Path -LiteralPath $ModeloBase64 -PathType Leaf)) {
+    throw "Primero prepara y verifica el paquete Base64."
+}
+& $ProyectoPython -X utf8 -B evaluate.py --model $ModeloBase64 --episodes 2 --seed 42 --configuracion Base64 --semilla-entrenamiento 42
+```
+
+Las evaluaciones del Base64 conocido se comparan con los CSV `results/evaluacion_best_*`.
+El lote de 240 episodios del informe procede de los CSV experimentales publicados.
+Los seis checkpoints entrenados de ese lote siguen sin estar disponibles.
+
 ## Ejecutar los notebooks
 
 Desde el mismo entorno virtual, instala el complemento y registra su kernel.
-Si el registro de entrenamiento se encuentra fuera de `results/training_log.csv`,
-indica su ubicación antes de iniciar Jupyter.
 
 ```powershell
 uv --no-cache pip install --python $ProyectoPython -r requirements-notebooks.txt
 & $ProyectoPython -m ipykernel install --sys-prefix --name carrito-dqn --display-name "Python (Carrito DQN)"
-$env:CARRITO_TRAINING_LOG = Read-Host "Ruta al training_log.csv existente"
+```
+
+El notebook experimental lee los 120 episodios DQN de `csv_results/evaluation_results.csv`
+sin archivos externos. El integrado de 240 episodios está en
+`csv_results/comparison_results_integrado.csv`. La variable `CARRITO_EVALUATION_CSV`
+permite elegir otro CSV con las ocho columnas de evaluación.
+
+Para analizar el entrenamiento Base64 de 145 episodios, verifica el paquete como
+se indica arriba y configura su log antes de iniciar Jupyter. También puedes
+usar otro registro existente, por ejemplo el de tu entrenamiento diagnóstico.
+
+```powershell
+if (-not $LogBase64 -or -not (Test-Path -LiteralPath $LogBase64 -PathType Leaf)) {
+    throw "Falta el registro Base64. Primero prepara y verifica el paquete de demostración."
+}
+$env:CARRITO_TRAINING_LOG = $LogBase64
+```
+
+Abre JupyterLab, selecciona **Python (Carrito DQN)** y ejecuta todas las celdas.
+Las rutas relativas se resuelven desde la raíz al ejecutar allí o en `notebooks/`.
+
+```powershell
 & $ProyectoPython -m jupyterlab
 ```
 
-Abre el notebook desde JupyterLab, selecciona **Python (Carrito DQN)** y ejecuta
-todas las celdas. Los dos notebooks resuelven sus rutas relativas desde la raíz
-del repositorio cuando el kernel comienza ahí o en `notebooks/`.
-
-También puedes ejecutar los notebooks sin interfaz y guardar las copias
-ejecutadas y las exportaciones en un directorio temporal. Ejecuta estos comandos
-desde la raíz, en la misma terminal y con `CARRITO_TRAINING_LOG` configurada.
+Para ejecutar sin interfaz desde la raíz, guarda las copias ejecutadas y sus
+exportaciones en una carpeta temporal. El análisis de entrenamiento se ejecuta
+si configuraste un registro existente.
 
 ```powershell
 $SalidaNotebook = Join-Path ([System.IO.Path]::GetTempPath()) ("carrito-notebooks-" + [guid]::NewGuid().ToString("N"))
-New-Item -ItemType Directory -Path $SalidaNotebook | Out-Null
-$env:CARRITO_NOTEBOOK_OUTPUT = Join-Path $SalidaNotebook "experimental"
-& $ProyectoPython -m nbconvert --to notebook --execute notebooks/analisis_experimental.ipynb --output-dir $SalidaNotebook
-$env:CARRITO_NOTEBOOK_OUTPUT = Join-Path $SalidaNotebook "entrenamiento"
-& $ProyectoPython -m nbconvert --to notebook --execute notebooks/analisis_entrenamiento.ipynb --output-dir $SalidaNotebook
-Remove-Item Env:CARRITO_NOTEBOOK_OUTPUT
+New-Item -ItemType Directory -Path $SalidaNotebook -ErrorAction Stop | Out-Null
+try {
+    $env:CARRITO_NOTEBOOK_OUTPUT = Join-Path $SalidaNotebook "experimental"
+    & $ProyectoPython -m nbconvert --to notebook --execute notebooks/analisis_experimental.ipynb --output-dir $SalidaNotebook
+    if ($LASTEXITCODE -ne 0) { throw "Falló el notebook experimental." }
+    if ($env:CARRITO_TRAINING_LOG -and (Test-Path -LiteralPath $env:CARRITO_TRAINING_LOG -PathType Leaf)) {
+        $env:CARRITO_NOTEBOOK_OUTPUT = Join-Path $SalidaNotebook "entrenamiento"
+        & $ProyectoPython -m nbconvert --to notebook --execute notebooks/analisis_entrenamiento.ipynb --output-dir $SalidaNotebook
+        if ($LASTEXITCODE -ne 0) { throw "Falló el notebook de entrenamiento." }
+    } else {
+        Write-Host "Para ejecutar también el notebook de entrenamiento, configura CARRITO_TRAINING_LOG con un CSV existente."
+    }
+} finally {
+    Remove-Item Env:CARRITO_NOTEBOOK_OUTPUT -ErrorAction SilentlyContinue
+}
 $SalidaNotebook
 ```
 
-Sin `CARRITO_NOTEBOOK_OUTPUT` se crea un directorio único por ejecución bajo
-`results_notebooks/`. Si se indica un destino explícito, debe ser nuevo.
-La última celda muestra la ubicación de las tablas CSV y figuras PNG.
-`CARRITO_EVALUATION_CSV` permite elegir otro CSV de ocho columnas para un
-análisis independiente.
+Sin `CARRITO_NOTEBOOK_OUTPUT` cada notebook crea su propio directorio en
+`results_notebooks/`. Los destinos explícitos deben ser nuevos. Las copias
+ejecutadas pueden mostrar rutas locales. Para la entrega usa las figuras y
+tablas exportadas o limpia las salidas de las celdas antes de distribuirlas.
 
-- **Experimental.** `csv_results/evaluation_results.csv` contiene las 120 observaciones DQN del lote de 240. Las otras 120 corresponden a los agentes de referencia y se conservan en `csv_results/comparison_results.csv`. El archivo `csv_results/comparison_results_integrado.csv` reúne el lote. Los agregados del notebook comparan semillas y distinguen pasos de todos los episodios y pasos de los episodios exitosos.
-- **Entrenamiento.** El `training_log.csv` real del Base64 conocido contiene 145 episodios de un entrenamiento. Usa su ruta existente. Las curvas y las tablas corresponden solo a ese registro.
-- **Evaluaciones reproducidas.** Los CSV `results/evaluacion_best_*` pertenecen al checkpoint Base64 conocido. El lote experimental se verificó con los CSV publicados. Sus seis checkpoints originales siguen sin estar disponibles.
-
-Consulta la [evidencia de ejecución de los notebooks](docs/evaluacion/evidencias/validacion_notebooks_2026-11-24.md)
-para ver los entornos ensayados, las salidas y la comparación matemática.
-
-## Secuencia de uso
-
-Activa el entorno virtual o reemplaza `python` por `& $ProyectoPython` en los
-ejemplos de PowerShell de esta sección y de la evaluación.
-
-```powershell
-python manual_drive.py
-python random_baseline.py
-python heuristic_baseline.py
-python train.py --episodes 600
-python evaluate.py --model results/best_model.pt
-```
-
-El entrenamiento se realiza sin ventana para aprovechar mejor el procesador.
-La evaluación abre Pygame y muestra los sensores, la velocidad, la acción y el
-avance. Los archivos `training_log.csv`, `training_curves.png` y los modelos
-entrenados se guardan en `results`.
+Consulta la [evidencia de los notebooks](docs/evaluacion/evidencias/validacion_notebooks_2026-11-24.md)
+y el [inventario de entrega](docs/evaluacion/cierre_entrega.md).
 
 ## Qué deben comparar los estudiantes
 
@@ -107,11 +206,7 @@ estocástico y las comparaciones deben repetirse con al menos tres semillas.
 epsilon-greedy: todas las acciones se solicitan con `training=False`. La red se
 coloca en modo evaluación. No se entrena ni se modifica el modelo.
 
-El comando original sigue siendo válido:
-
-```powershell
-python evaluate.py --model results/best_model.pt --episodes 10 --no-render
-```
+Los comandos listos para ejecutar están en [Demostración Base64](#demostración-base64-con-el-paquete-de-entrega).
 
 Por defecto se usa inicio fijo, cinco episodios y semilla inicial 1000. La
 visualización se abre salvo que se indique `--no-render`. La selección de
@@ -121,7 +216,7 @@ dispositivo conserva el orden CUDA, MPS y CPU, según disponibilidad.
 
 | Argumento | Valor predeterminado | Descripción |
 |---|---|---|
-| `--model` | `results/best_model.pt` | Ruta de un archivo de modelo existente. |
+| `--model` | `results/best_model.pt` | Ruta de un archivo de modelo existente. En un clon nuevo, indica `--model` con la ruta de la demostración. |
 | `--episodes` | `5` | Número de episodios solicitado; entero mayor que cero. |
 | `--no-render` | Desactivado | Ejecuta sin ventana Pygame. |
 | `--seed` | `1000` | Semilla del primer episodio; entero no negativo. |
@@ -134,17 +229,8 @@ dispositivo conserva el orden CUDA, MPS y CPU, según disponibilidad.
 
 ### Inicio fijo e inicio aleatorio
 
-Inicio fijo con semilla explícita:
-
-```powershell
-python evaluate.py --model results/best_model.pt --episodes 10 --seed 42 --no-render
-```
-
-Inicio aleatorio reproducible y exportación:
-
-```powershell
-python evaluate.py --model results/best_model.pt --episodes 10 --seed 42 --random-start --no-render --output results/evaluacion_detallada.csv
-```
+La demostración usa la misma semilla inicial en ambos modos. Activa el
+inicio aleatorio con `--random-start`.
 
 Cada episodio usa `seed + índice`, comenzando con índice cero. En el ejemplo se
 usan las semillas 42 a 51. El inicio fijo conserva la posición predeterminada;
@@ -191,20 +277,13 @@ notebook `notebooks/analisis_experimental.ipynb`.
 configuracion,semilla,condicion,episodio,reward,success,collision,steps
 ```
 
-Ambas salidas pueden solicitarse juntas y proceden de una sola evaluación:
-
-```powershell
-python evaluate.py --model results/best_model.pt --episodes 10 --seed 1000 --random-start --no-render --configuracion Base64 --semilla-entrenamiento 42 --output results/detalle_Base64_s42_aleatoria_01.csv --csv-output results/experimental_Base64_s42_aleatoria_01.csv
-```
-
-En ese ejemplo, `semilla` en el CSV experimental vale **42** en todas las filas
-porque identifica el entrenamiento; `seed` en el detallado recorre **1000–1009**
-porque controla cada reinicio de evaluación. `condicion` vale `fija` o `aleatoria`,
-según `--random-start`. El evaluador comprueba el ancho de las capas en los
-tensores y lo contrasta con `config.hidden_size` si existe. Si se proporcionan
-la etiqueta o la semilla de entrenamiento, deben coincidir con el checkpoint.
-Si falta `config.seed`, se puede usar solo la salida detallada sin declarar
-una semilla de entrenamiento. Los metadatos incompatibles detienen la ejecución.
+La demostración genera las dos salidas con la misma evaluación. En ella,
+`semilla` del CSV experimental vale **42** en todas las filas porque identifica
+el entrenamiento. `seed` del CSV detallado recorre **42–51** porque controla los
+reinicios. `condicion` vale `fija` o `aleatoria`, según `--random-start`.
+El evaluador contrasta la arquitectura y la semilla indicada con el checkpoint.
+Si falta `config.seed`, usa solo la salida detallada sin declarar una semilla
+de entrenamiento.
 
 El CSV experimental contiene **solo episodios completos**, incluidas las
 truncaciones por límite de pasos. No puede identificar interrupciones con sus
@@ -234,10 +313,21 @@ commit de Git, huellas SHA-256 del código local, Python, PyTorch y dispositivo.
 Los registros siguientes incluyen las semillas efectivas y los datos de cada
 episodio. El nombre de la salida se guarda sin su ruta personal.
 
+Para verificar y recuperar la salida aleatoria de la demostración, vuelve a
+usar el directorio que imprimió la evaluación. La recuperación crea otros CSV.
+
 ```powershell
-python evaluate.py verify-exports results/detalle_Base64_s42_aleatoria_01.csv.manifest.jsonl
-python evaluate.py recover-exports results/detalle_Base64_s42_aleatoria_01.csv.manifest.jsonl --output results/detalle_recuperado.csv --csv-output results/experimental_recuperado.csv
-python evaluate.py verify-exports results/detalle_Base64_s42_aleatoria_01.csv.manifest.jsonl --output results/detalle_recuperado.csv --csv-output results/experimental_recuperado.csv
+if (-not $CorridaDemo) { throw "Primero ejecuta la evaluación Base64 o indica su carpeta en CorridaDemo." }
+$Manifiesto = Join-Path $CorridaDemo "aleatoria.jsonl"
+if (-not (Test-Path -LiteralPath $Manifiesto -PathType Leaf)) { throw "No se encontró aleatoria.jsonl en CorridaDemo." }
+& $ProyectoPython -X utf8 -B evaluate.py verify-exports $Manifiesto
+$Recuperacion = Join-Path $CorridaDemo ("recuperado-" + [guid]::NewGuid().ToString("N"))
+$DetalleRecuperado = Join-Path $Recuperacion "detalle.csv"
+$ExperimentalRecuperado = Join-Path $Recuperacion "experimental.csv"
+& $ProyectoPython -X utf8 -B evaluate.py recover-exports $Manifiesto --output $DetalleRecuperado --csv-output $ExperimentalRecuperado
+if ($LASTEXITCODE -ne 0) { throw "Falló la recuperación." }
+& $ProyectoPython -X utf8 -B evaluate.py verify-exports $Manifiesto --output $DetalleRecuperado --csv-output $ExperimentalRecuperado
+if ($LASTEXITCODE -ne 0) { throw "Las exportaciones recuperadas no coinciden con el manifiesto." }
 ```
 
 Si los CSV están en otra carpeta, pasa sus rutas con `--output` y `--csv-output`
@@ -278,20 +368,11 @@ El CSV detallado conserva solo el nombre, así que dos archivos distintos pueden
 compartir el identificador. Diferentes dispositivos o versiones de PyTorch pueden producir diferencias
 numéricas: una semilla no garantiza igualdad entre plataformas.
 
-La semilla de evaluación controla las condiciones iniciales, no es la semilla
-con la que se entrenó el modelo. Para comparar checkpoints de distintas semillas
-de entrenamiento usa las mismas semillas de evaluación y nombres de salida únicos:
-
-```powershell
-python evaluate.py --model results/seed_42/best_model.pt --episodes 10 --seed 1000 --random-start --no-render --output results/eval_train42_eval1000.csv
-python evaluate.py --model results/seed_43/best_model.pt --episodes 10 --seed 1000 --random-start --no-render --output results/eval_train43_eval1000.csv
-```
-
-Esas rutas son ejemplos y requieren checkpoints existentes. Registra por separado
-las configuraciones y semillas de entrenamiento y repite la comparación con las
-semillas acordadas por el equipo. El evaluador usa `TrackConfig()` y `CarConfig()`
-predeterminados; no reconstruye automáticamente condiciones del entorno usadas
-durante el entrenamiento. Compara resultados obtenidos bajo condiciones equivalentes.
+La semilla de evaluación controla las condiciones iniciales. Para comparar
+checkpoints de distintas semillas de entrenamiento, conserva las semillas de
+evaluación, indica con `--model` cada archivo existente y usa rutas de salida
+nuevas. El evaluador usa `TrackConfig()` y `CarConfig()` predeterminados.
+Compara resultados obtenidos bajo condiciones equivalentes.
 
 ### Carga restringida y adaptable
 
@@ -319,25 +400,14 @@ Para ampliar la especificación, verifica la carga restringida y la suite con
 las versiones y dispositivos que se quieran admitir. Si ambas variables
 `TORCH_FORCE_*` se activan, la carga se detiene antes de deserializar.
 
-Para comparar checkpoints existentes, usa la misma semilla de evaluación
-y rutas de salida nuevas:
-
-```powershell
-python evaluate.py --model results/Base32_seed42/best_model.pt --episodes 10 --seed 1000 --random-start --no-render --configuracion Base32 --semilla-entrenamiento 42 --output results/detalle_Base32_s42_validacion_01.csv --csv-output results/experimental_Base32_s42_validacion_01.csv
-python evaluate.py --model results/Base64_seed42/best_model.pt --episodes 10 --seed 1000 --random-start --no-render --configuracion Base64 --semilla-entrenamiento 42 --output results/detalle_Base64_s42_validacion_01.csv --csv-output results/experimental_Base64_s42_validacion_01.csv
-```
-
-Las rutas de entrada son ejemplos: deben apuntar a modelos existentes de la
-arquitectura y semilla indicadas. Omitir `--random-start` permite comprobar el
-inicio fijo. Cambia los nombres de salida para esa modalidad. La adaptación
-Base32 se probó con un checkpoint sintético. El Base64 conocido se contrastó
-con sus CSV históricos. Los seis checkpoints del lote experimental no están
-disponibles para reproducirlo.
+La adaptación Base32 se probó con un checkpoint sintético. El Base64 conocido
+se contrastó con sus CSV históricos. Los seis checkpoints del lote experimental
+siguen sin estar disponibles.
 
 ### Pruebas del módulo
 
 ```powershell
-python -X utf8 -B -m unittest discover -s tests -q
+& $ProyectoPython -X utf8 -B -m unittest discover -s tests -q
 ```
 
 La suite combina pruebas simuladas del evaluador con checkpoints temporales
