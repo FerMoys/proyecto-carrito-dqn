@@ -190,6 +190,16 @@ y el [inventario de entrega](docs/evaluacion/cierre_entrega.md).
 
 ## Qué deben comparar los estudiantes
 
+La [evidencia cuantitativa](docs/evidencia_cuantitativa.md) recoge las
+comparaciones realizadas. El lote histórico compara Base32, Base64, aleatorio
+y heurístico con tres semillas e inicios fijos y aleatorios. La demostración
+Base64 documenta un entrenamiento y diez evaluaciones sin exploración por
+modalidad de inicio.
+
+La lista siguiente conserva los requisitos académicos. Comparar cinco y tres
+sensores, probar 128 neuronas por capa y variar el descuento gamma, la duración
+de la exploración o la recompensa son propuestas de trabajo posterior.
+
 - Agente aleatorio frente a DQN.
 - Cinco sensores frente a tres sensores.
 - Red de 32, 64 o 128 neuronas por capa.

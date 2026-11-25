@@ -13,8 +13,8 @@ experimentos. [PR integral #2](https://github.com/FerMoys/proyecto-carrito-dqn/p
 | Sensores | Cinco rayos a −60°, −30°, 0°, 30° y 60° respecto al vehículo. Cada rayo avanza en incrementos de 4 px hasta el borde o el límite de 175 px. | [Sensores y observación](../simulator_core.py) |
 | Nueve observaciones | Cinco distancias divididas entre el alcance, velocidad dividida entre la máxima, seno y coseno del error angular respecto de la tangente y posición lateral entre −1 y +1. El vector es `float32`. | [Núcleo](../simulator_core.py), [interfaz Gymnasium](../car_env.py) |
 | Nueve acciones | IDs 0 a 8. Inercia, acelerar, frenar, girar a la izquierda, girar a la derecha, acelerar a la izquierda, acelerar a la derecha, frenar a la izquierda y frenar a la derecha. | [ACTION_NAMES y ACTION_TO_CONTROL](../config.py) |
-| Dinámica | Paso de 1/30 s. Velocidad limitada a 155 px/s, aceleración de 105 px/s², frenado de 165 px/s² y fricción de 28 px/s² al soltar el control longitudinal. El giro de 2.35 rad/s se escala por `0.30 + 0.70 × velocidad / velocidad máxima`. La posición avanza según la orientación y la velocidad resultantes. | [CarConfig](../config.py), [step](../simulator_core.py) |
-| Recompensa | Por transición se suma 18 veces el cambio angular, 0.035 veces la velocidad normalizada multiplicada por el alineamiento no negativo con la tangente y 0.01. Se resta 0.004 por magnitud del giro y 25 si hay colisión. Completar la vuelta añade 35. | [step](../simulator_core.py) |
+| Dinámica | Paso de 1/30 s. Velocidad limitada a 155 px/s, aceleración de 105 px/s², frenado de 150 px/s² y fricción de 28 px/s² al soltar el control longitudinal. El giro de 2.35 rad/s se escala por `0.30 + 0.70 × velocidad / velocidad máxima`. La posición avanza según la orientación y la velocidad resultantes. | [CarConfig](../config.py), [step](../simulator_core.py) |
+| Recompensa | Por transición se suma 18 veces el cambio angular con signo en radianes, 0.035 veces la velocidad normalizada multiplicada por el coseno del error respecto de la tangente limitado inferiormente a cero y 0.01. Se resta 0.004 veces el valor absoluto del mando de giro y 25 si hay colisión. Completar la vuelta añade 35. | [step](../simulator_core.py) |
 | Fin del episodio | El objetivo predeterminado es una vuelta. Una colisión o alcanzar el objetivo termina el episodio. Alcanzar 1 800 transiciones sin terminar lo trunca. La detección de colisión aplica un radio de 12 px. | [Núcleo](../simulator_core.py), [TrackConfig y CarConfig](../config.py) |
 | Representación | `CarTrackEnv` expone el contrato Gymnasium y renderiza en Pygame. El diagnóstico valida los espacios, las transiciones y el renderizado RGB. | [Entorno](../car_env.py), [diagnóstico](../check_environment.py) |
 
@@ -49,7 +49,7 @@ y selecciona la acción de mayor Q. [DQNAgent](../dqn_agent.py), [evaluate_episo
 | Descuento y red objetivo | γ = 0.99 y τ = 0.005 |
 | Replay y muestreo | Capacidad de 50 000 transiciones, minilote de 128 y comienzo de optimización con 1 000 transiciones |
 | Exploración | ε inicial 1.0, ε final 0.05 y decaimiento de 45 000 acciones |
-| Recorte y parada | Norma de gradiente máxima 10.0, ventana de 30 episodios y umbral de parada de 90 % de éxito en esa ventana |
+| Recorte y parada | Norma de gradiente máxima 10.0, parada temprana al alcanzar al menos 90 % de éxito en una ventana completa de 30 episodios |
 
 Los valores predeterminados se verifican en [TrainConfig](../config.py).
 La identificación del modelo entregado y los campos guardados constan en
