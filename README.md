@@ -5,31 +5,76 @@ un agente de aprendizaje por refuerzo profundo. La red recibe nueve variables y
 produce un valor Q para cada una de nueve acciones discretas derivadas de los
 controles acelerar, frenar, girar a la izquierda y girar a la derecha.
 
-## Instalación recomendada en Windows 11
+## Instalación en Windows
 
-1. Instala Python 3.11 o crea un entorno de Anaconda con esa versión.
-2. Abre una terminal en esta carpeta.
-3. Crea y activa un entorno virtual:
-
-```powershell
-py -3.11 -m venv .venv
-.venv\Scripts\activate
-```
-
-4. Instala las dependencias:
+Desde PowerShell, en la raíz del proyecto, utiliza Python 3.11 o 3.12 y
+`uv` en `PATH`. Si ya tienes un entorno en `.venv`, usa otro nombre para
+crear uno limpio. [Instalación de uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 ```powershell
-python -m pip install --upgrade pip
-pip install -r requirements.txt
+$PythonBase = (Get-Command python.exe).Source
+& $PythonBase --version
+uv --no-cache venv --python $PythonBase .venv
+$ProyectoPython = (Resolve-Path .\.venv\Scripts\python.exe).Path
+uv --no-cache pip install --python $ProyectoPython --index-url https://download.pytorch.org/whl/cpu "torch==2.15.0"
+uv --no-cache pip install --python $ProyectoPython -r requirements.txt
+uv --no-cache pip check --python $ProyectoPython
+& $ProyectoPython -X utf8 -B check_environment.py
 ```
 
-5. Comprueba el entorno:
+- **Ejecución.** `requirements.txt` cubre la simulación, Pygame, los agentes, el entrenamiento y la evaluación.
+- **Notebooks.** `requirements-notebooks.txt` añade JupyterLab, ipykernel y nbconvert al entorno del proyecto.
+- **Pruebas automatizadas.** La suite usa `unittest` de Python y las dependencias de ejecución. Para automatizar notebooks se instala el complemento de Jupyter descrito abajo.
+
+## Ejecutar los notebooks
+
+Desde el mismo entorno virtual, instala el complemento y registra su kernel.
+Si el registro de entrenamiento se encuentra fuera de `results/training_log.csv`,
+indica su ubicación antes de iniciar Jupyter.
 
 ```powershell
-python check_environment.py
+uv --no-cache pip install --python $ProyectoPython -r requirements-notebooks.txt
+& $ProyectoPython -m ipykernel install --sys-prefix --name carrito-dqn --display-name "Python (Carrito DQN)"
+$env:CARRITO_TRAINING_LOG = Read-Host "Ruta al training_log.csv existente"
+& $ProyectoPython -m jupyterlab
 ```
+
+Abre el notebook desde JupyterLab, selecciona **Python (Carrito DQN)** y ejecuta
+todas las celdas. Los dos notebooks resuelven sus rutas relativas desde la raíz
+del repositorio cuando el kernel comienza ahí o en `notebooks/`.
+
+También puedes ejecutar los notebooks sin interfaz y guardar las copias
+ejecutadas y las exportaciones en un directorio temporal. Ejecuta estos comandos
+desde la raíz, en la misma terminal y con `CARRITO_TRAINING_LOG` configurada.
+
+```powershell
+$SalidaNotebook = Join-Path ([System.IO.Path]::GetTempPath()) ("carrito-notebooks-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $SalidaNotebook | Out-Null
+$env:CARRITO_NOTEBOOK_OUTPUT = Join-Path $SalidaNotebook "experimental"
+& $ProyectoPython -m nbconvert --to notebook --execute notebooks/analisis_experimental.ipynb --output-dir $SalidaNotebook
+$env:CARRITO_NOTEBOOK_OUTPUT = Join-Path $SalidaNotebook "entrenamiento"
+& $ProyectoPython -m nbconvert --to notebook --execute notebooks/analisis_entrenamiento.ipynb --output-dir $SalidaNotebook
+Remove-Item Env:CARRITO_NOTEBOOK_OUTPUT
+$SalidaNotebook
+```
+
+Sin `CARRITO_NOTEBOOK_OUTPUT` se crea un directorio único por ejecución bajo
+`results_notebooks/`. Si se indica un destino explícito, debe ser nuevo.
+La última celda muestra la ubicación de las tablas CSV y figuras PNG.
+`CARRITO_EVALUATION_CSV` permite elegir otro CSV de ocho columnas para un
+análisis independiente.
+
+- **Experimental.** `csv_results/evaluation_results.csv` contiene las 120 observaciones DQN del lote de 240. Las otras 120 corresponden a los agentes de referencia y se conservan en `csv_results/comparison_results.csv`. El archivo `csv_results/comparison_results_integrado.csv` reúne el lote. Los agregados del notebook comparan semillas y distinguen pasos de todos los episodios y pasos de los episodios exitosos.
+- **Entrenamiento.** El `training_log.csv` real del Base64 conocido contiene 145 episodios de un entrenamiento. Usa su ruta existente. Las curvas y las tablas corresponden solo a ese registro.
+- **Evaluaciones reproducidas.** Los CSV `results/evaluacion_best_*` pertenecen al checkpoint Base64 conocido. El lote experimental se verificó con los CSV publicados. Sus seis checkpoints originales siguen sin estar disponibles.
+
+Consulta la [evidencia de ejecución de los notebooks](docs/evaluacion/evidencias/validacion_notebooks_2026-11-24.md)
+para ver los entornos ensayados, las salidas y la comparación matemática.
 
 ## Secuencia de uso
+
+Activa el entorno virtual o reemplaza `python` por `& $ProyectoPython` en los
+ejemplos de PowerShell de esta sección y de la evaluación.
 
 ```powershell
 python manual_drive.py
@@ -139,8 +184,8 @@ ruta simultáneamente. No se ofrece una opción para sobrescribir resultados.
 ### CSV experimental y compatibilidad con el integrante 3
 
 `--output` conserva exactamente las diez columnas del formato detallado.
-`--csv-output` produce este segundo formato, con las ocho columnas que valida
-`notebooks/analisis_experimental.ipynb` de la rama `feature/experimentos`:
+`--csv-output` produce este segundo formato, con las ocho columnas que valida el
+notebook `notebooks/analisis_experimental.ipynb`.
 
 ```text
 configuracion,semilla,condicion,episodio,reward,success,collision,steps
@@ -203,13 +248,9 @@ omite solo una línea final inconclusa, exige destinos nuevos y no reanuda la
 simulación. Dos CSV independientes no constituyen una escritura atómica.
 
 La columna `steps` conserva los pasos de cada episodio completo. El notebook
-promedia esos pasos para todos los episodios; la terminal muestra el promedio
-solo entre éxitos. Si aparecen fracasos, esas dos medias no representan lo mismo.
-
-El notebook experimental y los CSV publicados todavía pertenecen a la rama del
-integrante 3. Los ajustes de rutas y la verificación de sus 240 registros se
-documentan en [docs/evaluacion/integracion_experimentos.md](docs/evaluacion/integracion_experimentos.md).
-No se modificaron notebooks ni se incorporaron otras ramas automáticamente.
+publica el promedio sobre todos los episodios y el promedio entre éxitos.
+La terminal del evaluador informa este último. Un grupo sin éxitos conserva
+vacío su promedio de pasos exitosos.
 
 ### Métricas
 
@@ -271,13 +312,12 @@ El formato histórico no guarda las transiciones del búfer ni el estado global
 de los generadores aleatorios. El búfer se reinicia y la trayectoria exacta del
 entrenamiento no se puede reanudar. Los argumentos de `train.py` se conservan.
 
-`requirements.txt` todavía declara `torch>=2.2`. Para una entrega reproducible
-se propone fijar `torch==2.15.0` en el entorno documentado y ampliar el rango
-cuando haya pruebas con otras versiones o dispositivos. El filtro de seguridad
-en ejecución conserva el rechazo de las versiones anteriores a 2.10 y de
-2.14.x. Las versiones admitidas por el filtro no representan una matriz de
-compatibilidad probada. Si ambas variables `TORCH_FORCE_*` están activadas,
-la carga se detiene antes de deserializar.
+`requirements.txt` fija `torch==2.15.0`. En Windows se instala la distribución
+CPU del índice oficial de PyTorch. El filtro en ejecución conserva el rechazo
+de versiones preliminares, versiones anteriores a 2.10 y la serie 2.14.x.
+Para ampliar la especificación, verifica la carga restringida y la suite con
+las versiones y dispositivos que se quieran admitir. Si ambas variables
+`TORCH_FORCE_*` se activan, la carga se detiene antes de deserializar.
 
 Para comparar checkpoints existentes, usa la misma semilla de evaluación
 y rutas de salida nuevas:
