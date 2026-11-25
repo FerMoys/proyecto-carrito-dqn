@@ -34,3 +34,9 @@ desktop.ini
 # ARCHIVOS DE LOG
 # =====================================
 *.log
+
+# =====================================
+# RESULTADOS Y MODELOS ENTRENADOS
+# =====================================
+results*/
+*.pt

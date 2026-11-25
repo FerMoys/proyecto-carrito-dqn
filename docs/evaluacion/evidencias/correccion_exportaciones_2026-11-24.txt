@@ -1,0 +1,45 @@
+Validación de la etapa de corrección técnica
+Fecha: 2026-11-24
+Rama: feature/evaluacion-reproducible. HEAD: 064acca; incluye e8a2d92.
+Resumen de salidas observadas. Rutas de entrada y de prueba omitidas.
+
+SUITE
+Comando en cada intérprete: python -X utf8 -B -m unittest discover -s tests -q
+Python 3.11.9: 60 pruebas en 10.515 s, OK.
+Python 3.12.14: 60 pruebas en 6.885 s, OK.
+Regresiones simuladas: Ctrl+C entre escrituras, error al escribir el primer CSV,
+materialización desde el manifiesto, recuperación con un último registro UTF-8
+incompleto, destinos existentes conservados, lectura restringida y variables
+TORCH_FORCE_* heredadas. Las inyecciones de error usan unittest.mock.
+
+BASE64 REAL
+Comando equivalente por condición:
+python -X utf8 -B evaluate.py --model <checkpoint-conocido.pt> --episodes 10 --seed 42 --no-render --output <detalle-nuevo.csv> --csv-output <experimento-nuevo.csv>
+La condición aleatoria añade --random-start. Se reprodujeron 20 filas detalladas.
+Se verificaron las dos cabeceras de CSV, los valores comunes, las semillas 42–51,
+la identidad del modelo y la configuración del manifiesto. En esta prueba se
+llamó al punto de entrada real main() con esos argumentos, sin simular el
+agente ni el entorno. Las salidas y recuperaciones se escribieron en temporal.
+
+Entorno: 3.11.9 2.15.0+cpu SHA-256: 8fca3c72f147cd94af182417e55e4093ed0f6ff8eaf3448e654650d51c04f5b1
+fija 10 filas iguales al histórico y ambas salidas alineadas; {'reward_mean': 161.6824351951651, 'reward_std': 0.0, 'success_rate': 1.0, 'collision_rate': 0.0, 'steps_success_mean': 326.0, 'episodes_completed': 10, 'episodes_interrupted': 0}
+Variable activada: TORCH_FORCE_WEIGHTS_ONLY_LOAD
+aleatoria 10 filas iguales al histórico y ambas salidas alineadas; {'reward_mean': 161.8193127579036, 'reward_std': 0.08040261942877586, 'success_rate': 1.0, 'collision_rate': 0.0, 'steps_success_mean': 326.1, 'episodes_completed': 10, 'episodes_interrupted': 0}
+Variable activada: TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD
+Manifiesto: completed. Episodios registrados: 10.
+Recuperación escrita en archivos nuevos. Conserva el manifiesto original.
+Manifiesto: completed. Episodios registrados: 10.
+recuperado-d.csv: alineado.
+recuperado-e.csv: alineado.
+Manifiesto: completed. Episodios registrados: 10.
+Destino existente rechazado; CSV original intacto.
+Carga inválida rechazada: IndexError normalizado a ValueError.
+Ambas variables activadas: error previo a la escritura, variables conservadas.
+SHA-256 sin cambios: checkpoint y 4 CSV históricos.
+
+ALCANCE
+La regeneración de un manifiesto completo fue real. Las interrupciones y
+fallos de escritura se reprodujeron mediante inyección de errores en la suite.
+No se repitió el lote publicado de 240 episodios. Los seis modelos originales
+quedan fuera del alcance reproducible. No se cambiaron dependencias, ramas,
+checkpoints ni resultados históricos.

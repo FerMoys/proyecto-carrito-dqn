@@ -1,0 +1,71 @@
+Fecha de trabajo: 2026-11-22 (America/Guatemala)
+Rama: feature/evaluacion-reproducible
+Se invocó cada caso con el intérprete indicado y las opciones -X utf8 -B para capturar la salida de consola en UTF-8.
+Se verificaron códigos de salida y textos esperados mediante aserciones.
+
+Python: 3.12.14 (main, Aug 25 2026, 14:01:42) [MSC v.1944 64 bit (AMD64)]
+Ejecutable: python
+Pruebas de consola sin checkpoints entrenados.
+
+Ayuda sin dependencias pesadas
+Argumentos: evaluate.py --help
+Código de salida: 0 (esperado: 0)
+usage: evaluate.py [-h] [--model MODEL] [--episodes EPISODES] [--no-render]
+                   [--seed SEED] [--random-start] [--output OUTPUT]
+
+Evaluación reproducible del carrito DQN
+
+options:
+  -h, --help           show this help message and exit
+  --model MODEL
+  --episodes EPISODES
+  --no-render
+  --seed SEED          semilla del primer episodio (por defecto: 1000)
+  --random-start       habilitar variaciones iniciales reproducibles
+  --output OUTPUT      CSV nuevo; no se sobrescriben archivos existentes
+Comprobación: OK
+
+Comando original: modelo ausente
+Argumentos: evaluate.py --model results/best_model.pt --episodes 10 --no-render
+Código de salida: 1 (esperado: 1)
+Traceback (most recent call last):
+  File "evaluate.py", line 208, in <module>
+    main()
+  File "evaluate.py", line 140, in main
+    raise FileNotFoundError(
+FileNotFoundError: No se encontró results\best_model.pt. Ejecuta primero: python train.py
+Comprobación: OK
+
+Comando nuevo: modelo ausente
+Argumentos: evaluate.py --model results/best_model.pt --episodes 10 --seed 42 --random-start --no-render --output results/evaluacion_detallada.csv
+Código de salida: 1 (esperado: 1)
+Traceback (most recent call last):
+  File "evaluate.py", line 208, in <module>
+    main()
+  File "evaluate.py", line 140, in main
+    raise FileNotFoundError(
+FileNotFoundError: No se encontró results\best_model.pt. Ejecuta primero: python train.py
+Comprobación: OK
+
+Episodios no positivos
+Argumentos: evaluate.py --episodes 0 --no-render
+Código de salida: 2 (esperado: 2)
+usage: evaluate.py [-h] [--model MODEL] [--episodes EPISODES] [--no-render]
+                   [--seed SEED] [--random-start] [--output OUTPUT]
+evaluate.py: error: argument --episodes: debe ser un entero mayor que cero
+Comprobación: OK
+
+Semilla negativa
+Argumentos: evaluate.py --seed -1 --no-render
+Código de salida: 2 (esperado: 2)
+usage: evaluate.py [-h] [--model MODEL] [--episodes EPISODES] [--no-render]
+                   [--seed SEED] [--random-start] [--output OUTPUT]
+evaluate.py: error: argument --seed: debe ser un entero mayor o igual que cero
+Comprobación: OK
+
+No se generó un CSV de evaluación real.
+Sintaxis compatible con gramática Python 3.11: evaluate.py
+Sintaxis compatible con gramática Python 3.11: tests/test_evaluate.py
+La comprobación sintáctica no sustituye ejecutar la suite en Python 3.11.
+
+Nota de publicación (2026-11-24): se anonimizaron únicamente las rutas del usuario, del intérprete y del checkpoint. Se conservaron mensajes técnicos, semillas y resultados numéricos. Los SHA-256 de los CSV se recalcularon tras cambiar solo model; corresponden a los archivos locales con CRLF. Los hashes de publicación con LF se detallan en validacion_checkpoint_2026-11-23.md.
