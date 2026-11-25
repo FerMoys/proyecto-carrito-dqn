@@ -1,0 +1,3 @@
+condicion,episodios,semilla_inicial,semilla_final,exito_pct,colision_pct,retorno_medio,retorno_sd_poblacional,pasos_medios_exitosos
+fija,10,42,51,100.0,0.0,161.6824351951651,0.0,326.0
+aleatoria,10,42,51,100.0,0.0,161.8193127579036,0.08040261942877586,326.1
