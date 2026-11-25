@@ -1,0 +1,40 @@
+Validación de carga centralizada — 2026-11-24
+Rama feature/integracion-final. HEAD base 9eac8f3. Validación sobre cambios locales.
+
+Suite completa
+    python -X utf8 -B -m unittest discover -s tests -q
+    Python 3.11.9, PyTorch 2.15.0+cpu: 64 pruebas, OK (20.102 s).
+    Python 3.12.14, PyTorch 2.15.0+cpu: 64 pruebas, OK (21.483 s).
+    Incluye mocks para fallos de exportación y tensores reales de PyTorch
+    para comprobar la deserialización, la arquitectura y la reanudación.
+
+Evaluación real — Python 3.11.9, PyTorch 2.15.0+cpu
+    Checkpoint best_model.pt del entrenamiento base, Base64, semilla de entrenamiento 42.
+    SHA-256 8fca3c72f147cd94af182417e55e4093ed0f6ff8eaf3448e654650d51c04f5b1.
+    Sin renderizado, política greedy, semilla de evaluación 42.
+    Inicio fijo: 10 filas idénticas a results/evaluacion_best_fija_py311_20261123_01.csv.
+        Retorno medio 161.6824351951651, desviación 0.0.
+        10 éxitos, 0 colisiones, 0 interrupciones, 326.0 pasos medios en éxito.
+    Inicio aleatorio: 10 filas idénticas a results/evaluacion_best_aleatoria_py311_20261123_01.csv.
+        Retorno medio 161.8193127579036, desviación 0.08040261942877586.
+        10 éxitos, 0 colisiones, 0 interrupciones, 326.1 pasos medios en éxito.
+    La instrumentación observó una lectura y una deserialización restringida
+    por evaluación (map_location="cpu", weights_only=True).
+    Ambas evaluaciones exportaron CSV de 10 y 8 columnas y un manifiesto JSONL.
+    La prueba de recuperación regeneró ambas salidas alineadas con el manifiesto.
+    Un checkpoint inválido se rechazó antes de crear archivos de salida.
+    La carga completa restauró la red objetivo, los estados de AdamW y 45552 pasos.
+
+Comprobación con datos temporales — Python 3.11.9, PyTorch 2.15.0+cpu
+    Base32 sintético sin entrenamiento previo: inferencia en el simulador,
+    doble CSV, manifiesto y una única lectura y deserialización restringida.
+    train.py: un episodio diagnóstico, dos pasos, checkpoint final recargado.
+    Se compararon antes y después los SHA-256 de dos checkpoints originales y
+    nueve CSV históricos. Todos conservaron los mismos bytes.
+
+Alcance
+    Las evaluaciones y los archivos nuevos de esta comprobación fueron temporales.
+    El Base32 sintético valida la carga y la inferencia. Los seis checkpoints
+    experimentales originales siguen sin estar disponibles. Los 240 registros
+    históricos se conservaron y no volvieron a ejecutarse en esta fase.
+    La validación se realizó en CPU. La suite solo acredita PyTorch 2.15.0+cpu.

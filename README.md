@@ -252,25 +252,35 @@ semillas acordadas por el equipo. El evaluador usa `TrackConfig()` y `CarConfig(
 predeterminados; no reconstruye automáticamente condiciones del entorno usadas
 durante el entrenamiento. Compara resultados obtenidos bajo condiciones equivalentes.
 
-La carga actual en esta base utiliza redes de **64 neuronas por capa oculta**.
-La validación de arquitecturas de 32 o 128 queda pendiente de que el equipo integre
-y apruebe la rama experimental que incluye `feature/agente-dqn`. En esta etapa
-el evaluador lee el checkpoint una sola vez con `weights_only=True` y carga
-solo los pesos de la política que construye el agente actual. Tras integrar la
-carga adaptable, la lectura restringida residirá en `DQNAgent.load()`.
+### Carga restringida y adaptable
 
-La evaluación de checkpoints usa deserialización restringida y requiere PyTorch
-estable 2.10–2.13 o 2.15 en adelante. Usa checkpoints de procedencia conocida.
-El mínimo de `requirements.txt` es anterior a la corrección requerida por este
-evaluador. La propuesta para la integración es `torch>=2.10,!=2.14.*`. La
-ejecución real de esta etapa verificó PyTorch 2.15.0. Si ambas variables
-`TORCH_FORCE_*` están activadas, el evaluador rechaza la configuración antes
-de leer el checkpoint. Consulta el [plan de integración](docs/evaluacion/preparacion_integracion.md)
-para ver el impacto y la validación pendiente.
+`DQNAgent.load(path, mode="inference")` lee una vez con `weights_only=True`,
+deduce el ancho de los tensores y comprueba que coincida con la configuración
+guardada cuando existe. Construye la política con ese ancho y deja la red en
+modo de evaluación. El evaluador usa `training=False` y escribe el manifiesto
+con el SHA-256 y los metadatos devueltos por esa misma lectura. La inferencia
+no restaura la red objetivo, el optimizador ni los pasos. Un archivo histórico
+completo sigue deserializándose como un solo checkpoint aunque solo se aplique
+su política.
 
-Después de integrar los cambios aprobados de `DQNAgent.load()` y disponer de los
-checkpoints correspondientes, se podrán validar ambas arquitecturas con la misma
-semilla de evaluación y archivos de salida nuevos:
+`DQNAgent.load(path)` conserva el comportamiento de carga para reanudar
+entrenamiento. También se puede indicar con `mode="resume"`. Restaura la
+política, la red objetivo, el optimizador, los pasos y la configuración
+numérica guardada. Si faltan los pasos en un archivo antiguo, empieza en cero.
+El formato histórico no guarda las transiciones del búfer ni el estado global
+de los generadores aleatorios. El búfer se reinicia y la trayectoria exacta del
+entrenamiento no se puede reanudar. Los argumentos de `train.py` se conservan.
+
+`requirements.txt` todavía declara `torch>=2.2`. Para una entrega reproducible
+se propone fijar `torch==2.15.0` en el entorno documentado y ampliar el rango
+cuando haya pruebas con otras versiones o dispositivos. El filtro de seguridad
+en ejecución conserva el rechazo de las versiones anteriores a 2.10 y de
+2.14.x. Las versiones admitidas por el filtro no representan una matriz de
+compatibilidad probada. Si ambas variables `TORCH_FORCE_*` están activadas,
+la carga se detiene antes de deserializar.
+
+Para comparar checkpoints existentes, usa la misma semilla de evaluación
+y rutas de salida nuevas:
 
 ```powershell
 python evaluate.py --model results/Base32_seed42/best_model.pt --episodes 10 --seed 1000 --random-start --no-render --configuracion Base32 --semilla-entrenamiento 42 --output results/detalle_Base32_s42_validacion_01.csv --csv-output results/experimental_Base32_s42_validacion_01.csv
@@ -279,21 +289,23 @@ python evaluate.py --model results/Base64_seed42/best_model.pt --episodes 10 --s
 
 Las rutas de entrada son ejemplos: deben apuntar a modelos existentes de la
 arquitectura y semilla indicadas. Omitir `--random-start` permite comprobar el
-inicio fijo; cambiar los nombres de salida para esa modalidad. Estos comandos
-son validaciones posteriores a la integración aprobada, no entrenamientos ni
-pruebas ya realizadas con Base32.
+inicio fijo. Cambia los nombres de salida para esa modalidad. La adaptación
+Base32 se probó con un checkpoint sintético. El Base64 conocido se contrastó
+con sus CSV históricos. Los seis checkpoints del lote experimental no están
+disponibles para reproducirlo.
 
 ### Pruebas del módulo
 
 ```powershell
-python -B -m unittest discover -s tests -p test_evaluate.py -v
+python -X utf8 -B -m unittest discover -s tests -q
 ```
 
-Las pruebas usan `unittest`, agentes y checkpoints simulados en archivos temporales;
-no requieren modelos entrenados ni realizan entrenamiento. Una prueba adicional
-usa el núcleo real del simulador con un agente simulado y requiere NumPy; se omite
-explícitamente si no está instalado. Las pruebas con mocks no acreditan la carga
-real de PyTorch ni el funcionamiento de la ventana Pygame.
+La suite combina pruebas simuladas del evaluador con checkpoints temporales
+y tensores reales de PyTorch. Cubre la carga restringida, la adaptación Base32,
+los estados de AdamW y la gestión de fallos. La verificación con el Base64
+conocido usa el archivo original en modo de lectura y salidas temporales.
+Consulta la [evidencia de carga centralizada](docs/evaluacion/evidencias/carga_centralizada_2026-11-24.txt)
+para ver las versiones ejecutadas y las comparaciones reales.
 
 La evidencia de ejecución y las comprobaciones pendientes se encuentran en
 [docs/evaluacion/validacion.md](docs/evaluacion/validacion.md). El borrador del

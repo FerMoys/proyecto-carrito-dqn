@@ -5,7 +5,6 @@ import csv
 import hashlib
 import importlib.util
 import io
-import os
 from pathlib import Path
 import random
 import sys
@@ -21,6 +20,7 @@ def make_env():
     env = Mock()
     env.closed = False
     env.action_space.n = 9
+    env.observation_space.shape = (9,)
     env.reset.return_value = ([0.0] * 9, {"success": 0, "collision": 0})
     env.step.return_value = (
         [0.0] * 9, 2.5, True, False,
@@ -36,14 +36,7 @@ def make_agent():
 
 
 def checkpoint_metadata(width=64, **config):
-    return {
-        "policy_state_dict": {
-            "layers.0.weight": SimpleNamespace(shape=(width, 9)),
-            "layers.2.weight": SimpleNamespace(shape=(width, width)),
-            "layers.4.weight": SimpleNamespace(shape=(9, width)),
-        },
-        "config": config,
-    }
+    return {"width": width, "config": config}
 
 
 @contextmanager
@@ -53,7 +46,6 @@ def mock_runtime(env, agent, checkpoint):
     agent_class = Mock(return_value=agent)
     torch = SimpleNamespace(
         __version__="2.15.0+cpu",
-        load=Mock(return_value=checkpoint),
         cuda=SimpleNamespace(is_available=lambda: False),
         backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: False)),
         device=lambda name: name,
@@ -64,8 +56,23 @@ def mock_runtime(env, agent, checkpoint):
         "dqn_agent": SimpleNamespace(DQNAgent=agent_class),
         "config": SimpleNamespace(TrainConfig=Mock(return_value=object())),
     }
-    with patch.dict(sys.modules, modules):
-        yield env_class, agent_class
+    def load(path, *, mode):
+        assert mode == "inference"
+        return SimpleNamespace(
+            configuration=f"Base{checkpoint['width']}",
+            training_seed=checkpoint["config"].get("seed"),
+            sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+            training_config=checkpoint["config"],
+        )
+
+    previous_load = agent.load.side_effect
+    if previous_load is None:
+        agent.load.side_effect = load
+    try:
+        with patch.dict(sys.modules, modules):
+            yield env_class, agent_class
+    finally:
+        agent.load.side_effect = previous_load
 
 
 class ArgumentTests(unittest.TestCase):
@@ -349,70 +356,13 @@ class MetricTests(unittest.TestCase):
         self.assertIn("Episodios completados: 0", output.getvalue())
 
 
-class CheckpointTests(unittest.TestCase):
-    def test_width_inferred_from_tensors_without_config(self):
-        data = b"checkpoint de prueba"
-        checkpoint = checkpoint_metadata(32)
-        checkpoint.pop("config")
-        torch = SimpleNamespace(__version__="2.15.0", load=Mock(return_value=checkpoint))
-        identity, loaded = evaluate.read_checkpoint(torch, data)
-        self.assertIs(loaded, checkpoint)
-        self.assertEqual(identity.configuration, "Base32")
-        self.assertIsNone(identity.training_seed)
-        self.assertEqual(identity.sha256, hashlib.sha256(data).hexdigest())
-        self.assertEqual(torch.load.call_args.args[0].getvalue(), data)
-        self.assertEqual(torch.load.call_args.kwargs, {
-            "map_location": "cpu", "weights_only": True,
-        })
-
-    def test_unsupported_pytorch_cannot_deserialize(self):
-        for version in ("2.9.1", "2.14.1", "2.15.0rc1"):
-            with self.subTest(version=version):
-                torch = SimpleNamespace(__version__=version, load=Mock())
-                with self.assertRaisesRegex(RuntimeError, "PyTorch estable"):
-                    evaluate.read_checkpoint(torch, b"checkpoint")
-                torch.load.assert_not_called()
-
-    def test_inherited_torch_flags_never_enable_unrestricted_load(self):
-        force = "TORCH_FORCE_WEIGHTS_ONLY_LOAD"
-        disable = "TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"
-        for enabled in (force, disable):
-            flags = {force: "0", disable: "0", enabled: "true"}
-            torch = SimpleNamespace(__version__="2.15.0",
-                                    load=Mock(return_value=checkpoint_metadata()))
-            with self.subTest(enabled=enabled), patch.dict(os.environ, flags):
-                evaluate.read_checkpoint(torch, b"checkpoint")
-                self.assertEqual(torch.load.call_count, 1)
-                self.assertIs(torch.load.call_args.kwargs["weights_only"], True)
-                self.assertEqual({key: os.environ[key] for key in flags}, flags)
-
-    def test_conflicting_torch_flags_fail_before_deserialization(self):
-        flags = {"TORCH_FORCE_WEIGHTS_ONLY_LOAD": "yes",
-                 "TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD": "1"}
-        torch = SimpleNamespace(__version__="2.15.0", load=Mock())
-        with patch.dict(os.environ, flags):
-            with self.assertRaisesRegex(RuntimeError, "TORCH_FORCE_"):
-                evaluate.read_checkpoint(torch, b"checkpoint")
-            torch.load.assert_not_called()
-            self.assertEqual({key: os.environ[key] for key in flags}, flags)
-
-    def test_malformed_checkpoint_has_clear_error_and_no_unsafe_retry(self):
-        error = IndexError("pop from empty list")
-        torch = SimpleNamespace(__version__="2.15.0", load=Mock(side_effect=error))
-        with self.assertRaisesRegex(ValueError, "weights_only=True") as result:
-            evaluate.read_checkpoint(torch, b"invalido")
-        self.assertIs(result.exception.__cause__, error)
-        self.assertEqual(torch.load.call_count, 1)
-        self.assertIs(torch.load.call_args.kwargs["weights_only"], True)
-
-
 class MainTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="test_evaluate_")
         self.addCleanup(self.temp.cleanup)
         self.directory = Path(self.temp.name)
         self.model = self.directory / "modelo_simulado.pt"
-        self.model.touch()  # Fixture vacía; la deserialización de torch se simula.
+        self.model.touch()  # Fixture vacía; la carga del agente se simula.
         self.env, self.agent = make_env(), make_agent()
         self.checkpoint = checkpoint_metadata(hidden_size=64, seed=42)
 
@@ -427,11 +377,8 @@ class MainTests(unittest.TestCase):
     def test_original_command_with_mock_runtime(self):
         output, (env_class, _) = self.run_main("--episodes", "10", "--no-render")
         env_class.assert_called_once_with(render_mode=None)
-        self.agent.load.assert_not_called()
-        self.agent.policy_net.load_state_dict.assert_called_once_with(
-            self.checkpoint["policy_state_dict"],
-        )
-        self.agent.policy_net.eval.assert_called_once_with()
+        self.agent.load.assert_called_once_with(self.model, mode="inference")
+        self.agent.policy_net.load_state_dict.assert_not_called()
         self.env.close.assert_called_once_with()
         self.assertEqual(self.agent.select_action.call_count, 10)
         self.assertIn("Episodios completados: 10", output)
@@ -471,7 +418,7 @@ class MainTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             self.run_main("--output", str(destination))
         self.assertEqual(destination.read_text(encoding="utf-8"), "evidencia original")
-        self.agent.policy_net.load_state_dict.assert_not_called()
+        self.agent.load.assert_not_called()
         self.env.reset.assert_not_called()
 
     def test_model_cannot_be_used_as_output(self):
@@ -485,7 +432,7 @@ class MainTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             self.run_main("--output", str(destination))
         self.assertFalse(destination.parent.exists())
-        self.agent.policy_net.load_state_dict.assert_not_called()
+        self.agent.load.assert_not_called()
 
     def test_model_directory_is_rejected(self):
         self.model = self.directory
@@ -493,7 +440,7 @@ class MainTests(unittest.TestCase):
             self.run_main()
 
     def test_load_failure_closes_environment_without_csv(self):
-        self.agent.policy_net.load_state_dict.side_effect = RuntimeError("fallo de carga simulado")
+        self.agent.load.side_effect = RuntimeError("fallo de carga simulado")
         destination = self.directory / "salida.csv"
         with self.assertRaisesRegex(RuntimeError, "fallo de carga simulado"):
             self.run_main("--output", str(destination))
@@ -677,7 +624,7 @@ class MainTests(unittest.TestCase):
             self.run_main("--output", str(detailed), "--csv-output", str(experimental))
         self.assertEqual(experimental.read_bytes(), historical_bytes)
         self.assertFalse(detailed.exists())
-        self.agent.policy_net.load_state_dict.assert_not_called()
+        self.agent.load.assert_not_called()
 
     def test_existing_detail_prevents_new_experimental_file(self):
         detailed = self.directory / "historico.csv"
@@ -687,13 +634,13 @@ class MainTests(unittest.TestCase):
             self.run_main("--output", str(detailed), "--csv-output", str(experimental))
         self.assertEqual(detailed.read_bytes(), b"evidencia existente\r\n")
         self.assertFalse(experimental.exists())
-        self.agent.policy_net.load_state_dict.assert_not_called()
+        self.agent.load.assert_not_called()
 
     def test_experimental_output_cannot_overwrite_checkpoint(self):
         with self.assertRaises(FileExistsError):
             self.run_main("--csv-output", str(self.model))
         self.assertEqual(self.model.read_bytes(), b"")
-        self.agent.policy_net.load_state_dict.assert_not_called()
+        self.agent.load.assert_not_called()
 
     def test_missing_checkpoint_creates_neither_output(self):
         self.model = self.directory / "ausente.pt"
@@ -705,7 +652,7 @@ class MainTests(unittest.TestCase):
         self.assertFalse(experimental.parent.exists())
 
     def test_load_failure_creates_neither_output_and_closes(self):
-        self.agent.policy_net.load_state_dict.side_effect = RuntimeError("carga simulada fallida")
+        self.agent.load.side_effect = RuntimeError("carga simulada fallida")
         detailed = self.directory / "detalle.csv"
         experimental = self.directory / "experimental.csv"
         with self.assertRaisesRegex(RuntimeError, "carga simulada fallida"):
@@ -755,8 +702,6 @@ class MainTests(unittest.TestCase):
         for checkpoint, label, message in (
             (checkpoint_metadata(32, seed=42), ["--configuracion", "Base64"], "Base32"),
             (checkpoint_metadata(seed=123), ["--semilla-entrenamiento", "42"], "config.seed"),
-            (checkpoint_metadata(hidden_size=32, seed=42), [], "config.hidden_size"),
-            (checkpoint_metadata(seed=None), [], "config.seed.*incompatible"),
         ):
             with self.subTest(label=label, message=message):
                 self.checkpoint = checkpoint
@@ -764,8 +709,8 @@ class MainTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     self.run_main("--csv-output", str(destination), *label)
                 self.assertFalse(destination.exists())
+                self.assertFalse(destination.with_name(destination.name + ".manifest.jsonl").exists())
         self.env.reset.assert_not_called()
-        self.agent.policy_net.load_state_dict.assert_not_called()
 
     def test_missing_seed_blocks_experiment_but_allows_detailed_csv(self):
         self.checkpoint = checkpoint_metadata()

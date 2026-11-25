@@ -5,20 +5,20 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
-import io
 import json
 import os
-import pickle
 import platform
 import re
 import subprocess
 import sys
-from collections.abc import Mapping
 from contextlib import ExitStack
-from dataclasses import asdict, dataclass, fields, is_dataclass
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from statistics import fmean, pstdev
-from typing import Callable, Sequence, TextIO
+from typing import TYPE_CHECKING, Callable, Sequence, TextIO
+
+if TYPE_CHECKING:
+    from dqn_agent import CheckpointIdentity
 
 CSV_COLUMNS = (
     "model", "episode", "seed", "random_start", "reward", "steps",
@@ -74,57 +74,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             and args.output.resolve() == args.csv_output.resolve()):
         parser.error("--output y --csv-output deben usar rutas diferentes")
     return args
-
-
-@dataclass(frozen=True)
-class CheckpointIdentity:
-    configuration: str
-    training_seed: int | None
-    sha256: str
-
-
-def read_checkpoint(torch, data: bytes) -> tuple[CheckpointIdentity, Mapping]:
-    # Versiones estables con las correcciones de los avisos de deserialización.
-    version = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\+[\w.-]+)?", torch.__version__)
-    if version is None or (release := tuple(map(int, version.groups()))) < (2, 10, 0) or (
-        (2, 14, 0) <= release < (2, 15, 0)
-    ):
-        raise RuntimeError("Usa PyTorch estable 2.10–2.13 o 2.15+ para cargar checkpoints.")
-    force_variables = ("TORCH_FORCE_WEIGHTS_ONLY_LOAD", "TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD")
-    if all(os.getenv(name, "").lower() in {"1", "y", "yes", "true"} for name in force_variables):
-        raise RuntimeError("Las dos variables TORCH_FORCE_* están activadas. "
-                           "Desactiva al menos una antes de ejecutar evaluate.py.")
-    try:
-        checkpoint = torch.load(io.BytesIO(data), map_location="cpu", weights_only=True)
-    except (EOFError, IndexError, OSError, RuntimeError, ValueError, pickle.UnpicklingError) as error:
-        raise ValueError("No se pudo leer el checkpoint con weights_only=True.") from error
-    if not isinstance(checkpoint, Mapping):
-        raise ValueError("Formato de checkpoint DQN no reconocido.")
-    policy = checkpoint.get("policy_state_dict")
-    if not isinstance(policy, Mapping):
-        raise ValueError("Checkpoint sin policy_state_dict verificable.")
-    shapes = [
-        tuple(getattr(policy.get(f"layers.{index}.weight"), "shape", ()))
-        for index in (0, 2, 4)
-    ]
-    if any(len(shape) != 2 or min(shape) < 1 for shape in shapes):
-        raise ValueError("No se puede verificar la arquitectura con los tensores guardados.")
-    first, middle, last = shapes
-    width = first[0]
-    if middle != (width, width) or last[1] != width:
-        raise ValueError("Las dimensiones de las capas son incompatibles entre sí.")
-    config = checkpoint.get("config", {})
-    if not isinstance(config, Mapping):
-        raise ValueError("El campo config del checkpoint es incompatible.")
-    if "hidden_size" in config and (
-        type(config["hidden_size"]) is not int or config["hidden_size"] != width
-    ):
-        raise ValueError("config.hidden_size contradice la arquitectura de los tensores.")
-    seed = config.get("seed")
-    if "seed" in config and (type(seed) is not int or seed < 0):
-        raise ValueError("config.seed del checkpoint es incompatible.")
-    identity = CheckpointIdentity(f"Base{width}", seed, hashlib.sha256(data).hexdigest())
-    return identity, checkpoint
 
 
 def validate_checkpoint(args: argparse.Namespace, identity: CheckpointIdentity) -> None:
@@ -301,7 +250,7 @@ def append_manifest(handle: TextIO, record: dict) -> None:
     os.fsync(handle.fileno())
 
 
-def evaluation_provenance(args, identity, checkpoint, torch, device, env, train_config) -> dict:
+def evaluation_provenance(args, identity: CheckpointIdentity, torch, device, env) -> dict:
     root = Path(__file__).resolve().parent
     try:
         commit = subprocess.check_output(
@@ -309,11 +258,6 @@ def evaluation_provenance(args, identity, checkpoint, torch, device, env, train_
         ).strip()
     except (OSError, subprocess.CalledProcessError):
         commit = None
-    training_config = {
-        field.name: value
-        for field in (fields(train_config) if is_dataclass(train_config) else ())
-        if type(value := checkpoint.get("config", {}).get(field.name)) in (int, float, bool)
-    }
     environment_config = {}
     for name in ("track_config", "car_config"):
         config = getattr(env, name, None)
@@ -321,8 +265,12 @@ def evaluation_provenance(args, identity, checkpoint, torch, device, env, train_
             environment_config[name] = asdict(config)
     return {
         "model": args.model.name,
-        "checkpoint": asdict(identity),
-        "training_config": training_config,
+        "checkpoint": {
+            "configuration": identity.configuration,
+            "training_seed": identity.training_seed,
+            "sha256": identity.sha256,
+        },
+        "training_config": identity.training_config,
         "evaluation": {
             "initial_seed": args.seed, "episodes_requested": args.episodes,
             "seed_rule": "initial_seed + episode - 1",
@@ -495,9 +443,6 @@ def main() -> int:
     from config import TrainConfig
     from dqn_agent import DQNAgent
 
-    identity, checkpoint = read_checkpoint(torch, args.model.read_bytes())
-    validate_checkpoint(args, identity)
-
     device = torch.device(
         "cuda"
         if torch.cuda.is_available()
@@ -509,26 +454,19 @@ def main() -> int:
     env = CarTrackEnv(render_mode=render_mode)
     prepared = False
     try:
-        observation, _ = env.reset(
-            seed=args.seed, options={"random_start": args.random_start}
-        )
-        hidden_size = int(identity.configuration.removeprefix("Base"))
-        train_config = TrainConfig(hidden_size=hidden_size)
         agent = DQNAgent(
-            observation_size=len(observation),
+            observation_size=env.observation_space.shape[0],
             action_size=env.action_space.n,
-            config=train_config,
+            config=TrainConfig(),
             device=device,
         )
-        # Solo inferencia hasta integrar DQNAgent.load() con carga explícita.
-        # Aquí se usa la política que ya construye el agente de esta rama.
-        agent.policy_net.load_state_dict(checkpoint["policy_state_dict"])
-        agent.policy_net.eval()
+        identity = agent.load(args.model, mode="inference")
+        validate_checkpoint(args, identity)
+        env.reset(seed=args.seed, options={"random_start": args.random_start})
 
         provenance = None
         if args.manifest is not None:
-            provenance = evaluation_provenance(args, identity, checkpoint, torch, device,
-                                               env, train_config)
+            provenance = evaluation_provenance(args, identity, torch, device, env)
         with ExitStack() as stack:
             detailed_output, experimental_output, journal = prepare_outputs(
                 stack, args.output, args.csv_output, args.manifest, provenance,
