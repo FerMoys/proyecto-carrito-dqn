@@ -48,15 +48,20 @@ puedes usar el paquete de demostración directamente.
 
 ## Demostración Base64 con el paquete de entrega
 
-Obtén `result_model_prueba.zip` de los materiales entregados por el equipo. El ZIP
-se distribuye por separado y la carpeta local `results_demo_base64/` está
-excluida de Git. El ZIP entregado contiene `best_model.pt` y `training_log.csv`
-en su raíz. Extrae solo una vez, desde la raíz del proyecto, en PowerShell:
+Descarga [result_model_prueba.zip](https://github.com/FerMoys/proyecto-carrito-dqn/releases/download/v1.0.0/result_model_prueba.zip)
+desde los assets del Release `v1.0.0`. Ese ZIP contiene `best_model.pt` y
+`training_log.csv` en su raíz. Los archivos automáticos de código fuente
+de GitHub excluyen los checkpoints. La carpeta local `results_demo_base64/`
+está excluida de Git. Extrae el paquete desde la raíz del proyecto con PowerShell:
 
 ```powershell
-$Paquete = Read-Host "Ruta al archivo result_model_prueba.zip recibido"
+$Paquete = Read-Host "Ruta al archivo result_model_prueba.zip descargado"
 if (-not $Paquete -or -not (Test-Path -LiteralPath $Paquete -PathType Leaf)) {
-    throw "Falta el ZIP de entrega. Solicita result_model_prueba.zip al equipo."
+    throw "Falta el ZIP. Descarga result_model_prueba.zip desde el Release v1.0.0."
+}
+$HashPaquete = (Get-FileHash -LiteralPath $Paquete -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($HashPaquete -ne 'b4a19da386a7cfd3f442a20d871b673c917c014956e8f846aefe8ee30fb5e3d0') {
+    throw "SHA-256 incorrecto para result_model_prueba.zip."
 }
 $DemoBase64 = Join-Path (Get-Location).Path "results_demo_base64"
 New-Item -ItemType Directory -Path $DemoBase64 -ErrorAction Stop | Out-Null
